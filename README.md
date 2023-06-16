@@ -40,7 +40,7 @@ Siga as etapas abaixo para executar a aplicação:
 
 1. Clone o repositório do projeto:
    ```
-   git clone https://github.com/seu-usuario/api-dotnet-framework6.git
+   git clone https://github.com/Potestino/Agenda.git
    ```
 
 2. Abra o projeto no Visual Studio (ou outra IDE compatível com .NET Framework 6).
