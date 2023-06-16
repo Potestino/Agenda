@@ -20,7 +20,7 @@ A API possui as seguintes funcionalidades:
 
 ## Estrutura do Projeto
 
-O projeto segue uma estrutura sólida com a separação das camadas lógicas em diferentes projetos:
+O projeto segue uma arquitetura padrão de web API com a separação das camadas lógicas:
 
 - `Controllers`: Contém os controladores da API
 - `Middleware`: Contém os handdler de erros customizaveis da API
