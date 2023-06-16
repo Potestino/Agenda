@@ -31,7 +31,7 @@ O projeto segue uma arquitetura padrão de web API com a separação das camadas
 
 ## Testes
 
-A API possui uma cobertura de testes de 80%, com foco nos principais cenários de uso. Os testes foram implementados utilizando um framework de teste adequado (XUnit) e abrangem as seguintes áreas:
+A API possui uma cobertura de testes de 80%. Os testes foram implementados utilizando um framework de teste adequado (XUnit)
 
 
 ## Executando a Aplicação
