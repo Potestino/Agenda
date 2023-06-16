@@ -17,7 +17,6 @@ A API possui as seguintes funcionalidades:
 
 - .NET Framework 6
 - Banco de dados Entity InMemoryDatabase
-- Contêiner Docker para a implantação da API
 
 ## Estrutura do Projeto
 
