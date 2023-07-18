@@ -15,7 +15,7 @@ A API possui as seguintes funcionalidades:
 
 ## Requisitos
 
-- .NET Framework 6
+- .NET 6
 - Banco de dados Entity InMemoryDatabase
 
 ## Estrutura do Projeto
