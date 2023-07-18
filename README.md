@@ -1,4 +1,4 @@
-# API .NET Framework 6 - Agenda
+# API .NET 6 - Agenda
 
 ## Funcionalidades
 
