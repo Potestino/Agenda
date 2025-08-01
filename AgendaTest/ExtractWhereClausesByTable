@@ -16,31 +16,51 @@ public Dictionary<string, List<string>> ExtractWhereClausesByTable(string soqlQu
         if (whereIndex == -1)
             continue;
 
-        var whereClause = blockContent.Substring(whereIndex + 5).Trim(); // Remove "WHERE"
+        var afterWhere = blockContent.Substring(whereIndex + 5).Trim();
 
-        var stopKeywords = new[] { "ORDER BY", "GROUP BY", "HAVING", "LIMIT" };
-        int endIndex = whereClause.Length;
-        foreach (var keyword in stopKeywords)
-        {
-            var idx = whereClause.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
-            if (idx != -1 && idx < endIndex)
-                endIndex = idx;
-        }
-
-        var filteredClause = whereClause.Substring(0, endIndex).Trim();
-
-        // Token-based split
-        var conditions = new List<string>();
         var buffer = new StringBuilder();
         int parenDepth = 0;
         bool inQuotes = false;
+        bool stop = false;
+
+        for (int i = 0; i < afterWhere.Length && !stop; i++)
+        {
+            char c = afterWhere[i];
+
+            if (c == '\'') inQuotes = !inQuotes;
+            if (!inQuotes)
+            {
+                if (c == '(') parenDepth++;
+                else if (c == ')') parenDepth--;
+
+                // Only check for keyword if we're not inside parens or quotes
+                if (parenDepth == 0)
+                {
+                    string remaining = afterWhere.Substring(i).ToUpperInvariant();
+
+                    if (remaining.StartsWith("ORDER BY") || remaining.StartsWith("GROUP BY") ||
+                        remaining.StartsWith("LIMIT") || remaining.StartsWith("HAVING"))
+                    {
+                        break;
+                    }
+                }
+            }
+
+            buffer.Append(c);
+        }
+
+        string filteredClause = buffer.ToString().Trim();
+
+        // Tokenize conditions
+        var conditions = new List<string>();
+        var condBuffer = new StringBuilder();
+        parenDepth = 0;
+        inQuotes = false;
 
         for (int i = 0; i < filteredClause.Length; i++)
         {
             char c = filteredClause[i];
-
-            if (c == '\'')
-                inQuotes = !inQuotes;
+            if (c == '\'') inQuotes = !inQuotes;
 
             if (!inQuotes)
             {
@@ -50,36 +70,7 @@ public Dictionary<string, List<string>> ExtractWhereClausesByTable(string soqlQu
 
             if (!inQuotes && parenDepth == 0 && i + 4 <= filteredClause.Length)
             {
-                var substr = filteredClause.Substring(i, 4).ToUpperInvariant();
-                if (substr.StartsWith("AND ") || substr.StartsWith("OR "))
+                string slice = filteredClause.Substring(i, 4).ToUpperInvariant();
+                if (slice.StartsWith("AND ") || slice.StartsWith("OR "))
                 {
-                    conditions.Add(buffer.ToString().Trim());
-                    buffer.Clear();
-                    i += 3; // Skip "AND " or "OR "
-                    continue;
-                }
-            }
-
-            buffer.Append(c);
-        }
-
-        if (buffer.Length > 0)
-            conditions.Add(buffer.ToString().Trim());
-
-        // Optional normalization
-        var normalizedConditions = conditions.Select(c => c
-            .Replace("= ''", "is empty value")
-            .Replace("!= ''", "is not empty value")
-            .Replace(">= ", "is on or after ")
-            .Replace("<= ", "is on or before ")
-            .Replace("> ", "is after ")
-            .Replace("< ", "is before ")
-            .Replace("= ", "is ")
-            .Replace("!= ", "is not ")
-            .Trim()).ToList();
-
-        result[tableName] = normalizedConditions;
-    }
-
-    return result;
-}
+                    conditions.Add(c
