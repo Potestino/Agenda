@@ -1,89 +1,35 @@
-public Dictionary<string, List<string>> ExtractWhereClausesByTable(string soqlQuery)
+public Dictionary<string, List<string>> ExtractWhereClausesByTable(string sqlQuery)
 {
     var result = new Dictionary<string, List<string>>();
-    if (string.IsNullOrWhiteSpace(soqlQuery))
+    if (string.IsNullOrWhiteSpace(sqlQuery))
         return result;
 
-    var decodedQuery = Uri.UnescapeDataString(soqlQuery.Replace("+", " "));
+    var decodedQuery = Uri.UnescapeDataString(sqlQuery.Replace("+", " "));
 
-    var selectBlocks = Regex.Matches(
-        decodedQuery,
-        @"SELECT\s+.*?\s+FROM\s+([a-zA-Z0-9_]+)\s+(.*?)(?=SELECT\s+|$)",
-        RegexOptions.Singleline | RegexOptions.IgnoreCase);
+    // Find table name after FROM
+    var fromMatch = Regex.Match(decodedQuery, @"FROM\s+([a-zA-Z0-9_\.]+)", RegexOptions.IgnoreCase);
+    if (!fromMatch.Success)
+        return result;
 
-    foreach (Match block in selectBlocks)
-    {
-        string tableName = block.Groups[1].Value.Trim();
-        string blockContent = block.Groups[2].Value;
+    string tableName = fromMatch.Groups[1].Value.Trim();
 
-        int whereIndex = blockContent.IndexOf("WHERE", StringComparison.OrdinalIgnoreCase);
-        if (whereIndex == -1)
-            continue;
+    // Find WHERE clause
+    var whereMatch = Regex.Match(decodedQuery, @"\bWHERE\b(.*)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    if (!whereMatch.Success)
+        return result;
 
-        string afterWhere = blockContent.Substring(whereIndex + 5).Trim();
+    string whereClause = whereMatch.Groups[1].Value;
+    whereClause = whereClause.Split(';')[0].Trim(); // Remove after ;
 
-        // Extract until ORDER BY / GROUP BY / HAVING / LIMIT outside parentheses
-        var buffer = new StringBuilder();
-        int parenDepth = 0;
-        bool inQuotes = false;
-
-        for (int i = 0; i < afterWhere.Length; i++)
-        {
-            char c = afterWhere[i];
-
-            if (c == '\'') inQuotes = !inQuotes;
-            if (!inQuotes)
-            {
-                if (c == '(') parenDepth++;
-                if (c == ')') parenDepth--;
-            }
-
-            if (!inQuotes && parenDepth == 0)
-            {
-                string remainder = afterWhere.Substring(i);
-
-                if (Regex.IsMatch(remainder, @"^(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT)\b", RegexOptions.IgnoreCase))
-                    break;
-            }
-
-            buffer.Append(c);
-        }
-
-        string fullWhereClause = buffer.ToString().Trim();
-
-        // Use Regex to split at true AND/OR boundaries
-        var conditions = SplitConditionsPreservingFieldNames(fullWhereClause);
-
-        // Normalize (optional)
-        var normalized = conditions.Select(c => c
-            .Replace("= ''", "is empty value")
-            .Replace("!= ''", "is not empty value")
-            .Replace(">= ", "is on or after ")
-            .Replace("<= ", "is on or before ")
-            .Replace("> ", "is after ")
-            .Replace("< ", "is before ")
-            .Replace("= ", "is ")
-            .Replace("!= ", "is not ")
-            .Trim()).ToList();
-
-        result[tableName] = normalized;
-    }
-
-    return result;
-}
-
-
-private List<string> SplitConditionsPreservingFieldNames(string clause)
-{
     var conditions = new List<string>();
     var buffer = new StringBuilder();
     int parenDepth = 0;
     bool inQuotes = false;
 
-    for (int i = 0; i < clause.Length;)
+    for (int i = 0; i < whereClause.Length;)
     {
-        // Detect quotes and parentheses
-        char c = clause[i];
+        char c = whereClause[i];
+
         if (c == '\'')
         {
             inQuotes = !inQuotes;
@@ -97,23 +43,14 @@ private List<string> SplitConditionsPreservingFieldNames(string clause)
             if (c == '(') parenDepth++;
             else if (c == ')') parenDepth--;
 
-            // Check for AND/OR with word boundaries
-            if (parenDepth == 0 && i + 4 <= clause.Length)
+            // Safe to split on AND
+            if (parenDepth == 0 && i + 4 <= whereClause.Length &&
+                whereClause.Substring(i, 4).ToUpperInvariant() == "AND ")
             {
-                var rest = clause.Substring(i);
-                var match = Regex.Match(rest, @"^(AND|OR)\b", RegexOptions.IgnoreCase);
-                if (match.Success)
-                {
-                    // Save condition before AND/OR
-                    if (buffer.Length > 0)
-                    {
-                        conditions.Add(buffer.ToString().Trim());
-                        buffer.Clear();
-                    }
-
-                    i += match.Length;
-                    continue;
-                }
+                conditions.Add(buffer.ToString().Trim());
+                buffer.Clear();
+                i += 4;
+                continue;
             }
         }
 
@@ -124,5 +61,6 @@ private List<string> SplitConditionsPreservingFieldNames(string clause)
     if (buffer.Length > 0)
         conditions.Add(buffer.ToString().Trim());
 
-    return conditions;
+    result[tableName] = conditions;
+    return result;
 }
