@@ -73,4 +73,33 @@ public Dictionary<string, List<string>> ExtractWhereClausesByTable(string soqlQu
                 string slice = filteredClause.Substring(i, 4).ToUpperInvariant();
                 if (slice.StartsWith("AND ") || slice.StartsWith("OR "))
                 {
-                    conditions.Add(c
+                    conditions.Add(condBuffer.ToString().Trim());
+                    condBuffer.Clear();
+                    i += 3;
+                    continue;
+                }
+            }
+
+            condBuffer.Append(c);
+        }
+
+        if (condBuffer.Length > 0)
+            conditions.Add(condBuffer.ToString().Trim());
+
+        // Normalize
+        var normalizedConditions = conditions.Select(c => c
+            .Replace("= ''", "is empty value")
+            .Replace("!= ''", "is not empty value")
+            .Replace(">= ", "is on or after ")
+            .Replace("<= ", "is on or before ")
+            .Replace("> ", "is after ")
+            .Replace("< ", "is before ")
+            .Replace("= ", "is ")
+            .Replace("!= ", "is not ")
+            .Trim()).ToList();
+
+        result[tableName] = normalizedConditions;
+    }
+
+    return result;
+}
