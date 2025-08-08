@@ -1,66 +1,48 @@
-public Dictionary<string, List<string>> ExtractWhereClausesByTable(string sqlQuery)
-{
-    var result = new Dictionary<string, List<string>>();
-    if (string.IsNullOrWhiteSpace(sqlQuery))
-        return result;
+-- Main template
+CREATE TABLE WorkflowTemplates (
+  Id            INT AUTO_INCREMENT PRIMARY KEY,
+  Name          VARCHAR(150) NOT NULL,
+  Description   VARCHAR(500),
+  Config        JSON,                          -- general settings
+  CreatedBy     VARCHAR(255) NOT NULL,
+  CreatedDate   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UpdatedBy     VARCHAR(255),
+  UpdatedDate   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 
-    var decodedQuery = Uri.UnescapeDataString(sqlQuery.Replace("+", " "));
+-- Tabs (sheets) this template expects
+CREATE TABLE WorkflowTemplateTabs (
+  Id            INT AUTO_INCREMENT PRIMARY KEY,
+  TemplateId    INT NOT NULL,
+  TabName       VARCHAR(100) NOT NULL,         -- Excel sheet name to look for
+  HasHeader     TINYINT(1) DEFAULT 1,
+  StartRow      INT DEFAULT 2,                 -- data start row
+  UniqueKeyExpr VARCHAR(255),                  -- e.g. "COL:A + '-' + COL:B"
+  Mapping       JSON,                          -- column -> metadata key map or transforms
+  Constraints   JSON,                          -- validations per column
+  FOREIGN KEY (TemplateId) REFERENCES WorkflowTemplates(Id)
+);
 
-    // Find table name after FROM
-    var fromMatch = Regex.Match(decodedQuery, @"FROM\s+([a-zA-Z0-9_\.]+)", RegexOptions.IgnoreCase);
-    if (!fromMatch.Success)
-        return result;
+-- Optional: field-level mapping if you prefer normalized over JSON
+CREATE TABLE WorkflowTemplateFieldMaps (
+  Id              INT AUTO_INCREMENT PRIMARY KEY,
+  TemplateTabId   INT NOT NULL,
+  ColumnRef       VARCHAR(50) NOT NULL,        -- e.g. "A", "B", or column header text
+  TargetKey       VARCHAR(100) NOT NULL,       -- metadata key name
+  DataType        VARCHAR(30)  NOT NULL,       -- string, int, decimal, date, bool
+  IsRequired      TINYINT(1) DEFAULT 0,
+  TransformExpr   VARCHAR(500),                -- optional simple expression
+  FOREIGN KEY (TemplateTabId) REFERENCES WorkflowTemplateTabs(Id)
+);
 
-    string tableName = fromMatch.Groups[1].Value.Trim();
+-- Link a Workflow to a Template (optional but useful)
+ALTER TABLE Workflows
+  ADD COLUMN TemplateId INT NULL,
+  ADD CONSTRAINT fk_Workflows_Templates FOREIGN KEY (TemplateId) REFERENCES WorkflowTemplates(Id);
 
-    // Find WHERE clause
-    var whereMatch = Regex.Match(decodedQuery, @"\bWHERE\b(.*)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    if (!whereMatch.Success)
-        return result;
-
-    string whereClause = whereMatch.Groups[1].Value;
-    whereClause = whereClause.Split(';')[0].Trim(); // Remove after ;
-
-    var conditions = new List<string>();
-    var buffer = new StringBuilder();
-    int parenDepth = 0;
-    bool inQuotes = false;
-
-    for (int i = 0; i < whereClause.Length;)
-    {
-        char c = whereClause[i];
-
-        if (c == '\'')
-        {
-            inQuotes = !inQuotes;
-            buffer.Append(c);
-            i++;
-            continue;
-        }
-
-        if (!inQuotes)
-        {
-            if (c == '(') parenDepth++;
-            else if (c == ')') parenDepth--;
-
-            // Safe to split on AND
-            if (parenDepth == 0 && i + 4 <= whereClause.Length &&
-                whereClause.Substring(i, 4).ToUpperInvariant() == "AND ")
-            {
-                conditions.Add(buffer.ToString().Trim());
-                buffer.Clear();
-                i += 4;
-                continue;
-            }
-        }
-
-        buffer.Append(c);
-        i++;
-    }
-
-    if (buffer.Length > 0)
-        conditions.Add(buffer.ToString().Trim());
-
-    result[tableName] = conditions;
-    return result;
-}
+-- Enrich items to track origin
+ALTER TABLE WorkflowItems
+  ADD COLUMN TemplateTabId INT NULL,
+  ADD COLUMN RowNumber INT NULL,
+  ADD COLUMN ItemKey VARCHAR(255) NULL,        -- derived from UniqueKeyExpr
+  ADD CONSTRAINT fk_WorkflowItems_TemplateTab FOREIGN KEY (TemplateTabId) REFERENCES WorkflowTemplateTabs(Id);
