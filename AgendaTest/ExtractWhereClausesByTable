@@ -2,127 +2,109 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using System.Text.Json;
 
-// Models (trimmed)
-public record WorkflowTemplate(int Id, string Name, IEnumerable<WorkflowTemplateTab> Tabs);
+public record WorkflowTemplate(int Id, IEnumerable<WorkflowTemplateTab> Tabs);
 public record WorkflowTemplateTab(
-    int Id, int TemplateId, string TabName, bool HasHeader, int StartRow,
-    string? UniqueKeyExpr, string? Mapping, string? Constraints,
-    IEnumerable<WorkflowTemplateFieldMap> FieldMaps);
-public record WorkflowTemplateFieldMap(int Id, int TemplateTabId, string ColumnRef, string TargetKey, string DataType, bool IsRequired, string? TransformExpr);
+    int Id, string TabName, bool HasHeader, int StartRow,
+    string? Mapping, IEnumerable<WorkflowTemplateFieldMap>? FieldMaps);
+public record WorkflowTemplateFieldMap(string ColumnRef, string TargetKey, string DataType = "string");
 
-public class WorkflowItem
+/// <summary>
+/// Reads only the sheets defined in the template and returns:
+/// Dictionary{ sheetName => List{ Dictionary{ columnKey => value } } }
+/// </summary>
+public Dictionary<string, List<Dictionary<string, object>>> ReadExcelWithTemplate(
+    Stream fileStream, WorkflowTemplate template)
 {
-    public int WorkflowInstanceId { get; set; }
-    public string ItemType { get; set; } = string.Empty;      // sheet name
-    public string Metadata { get; set; } = string.Empty;       // JSON
-    public int? TemplateTabId { get; set; }
-    public int? RowNumber { get; set; }
-    public string? ItemKey { get; set; }
-}
+    var result = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
 
-public async Task<List<WorkflowItem>> ImportExcelWithTemplateAsync(
-    Stream fileStream,
-    int workflowInstanceId,
-    WorkflowTemplate template,
-    string createdBy)
-{
-    var items = new List<WorkflowItem>();
+    using var document = SpreadsheetDocument.Open(fileStream, false);
+    var workbookPart = document.WorkbookPart!;
+    var sheets = workbookPart.Workbook.Sheets!.Elements<Sheet>().ToList();
 
-    using var doc = SpreadsheetDocument.Open(fileStream, false);
-    var wbPart = doc.WorkbookPart!;
-    var sheets = wbPart.Workbook.Sheets!.Elements<Sheet>().ToList();
+    // Build a lookup of template tabs by name
+    var tabsByName = template.Tabs
+        .GroupBy(t => t.TabName, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-    foreach (var tab in template.Tabs)
+    foreach (var sheet in sheets)
     {
-        // find a sheet that matches the template tab name (case-insensitive)
-        var sheet = sheets.FirstOrDefault(s =>
-            string.Equals(s.Name?.Value, tab.TabName, StringComparison.OrdinalIgnoreCase));
-        if (sheet is null) continue; // sheet missing—skip or log
+        var sheetName = sheet.Name!.Value!;
+        if (!tabsByName.TryGetValue(sheetName, out var tab)) continue; // skip sheets not in template
 
-        var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!);
-        var sheetData = wsPart.Worksheet.GetFirstChild<SheetData>()!;
+        var worksheetPart = (WorksheetPart)workbookPart.GetPartById(sheet.Id!);
+        var sheetData = worksheetPart.Worksheet.Elements<SheetData>().First();
         var rows = sheetData.Elements<Row>().ToList();
         if (rows.Count == 0) continue;
 
-        // Build column->target mapping
-        var headerRowIndex = tab.HasHeader ? 1 : 0;
-        var headerRow = rows[0];
-        var templateMap = BuildTemplateMap(tab, headerRow, wbPart);
+        // Build mapping for this sheet (column -> key)
+        // Priority: FieldMaps -> Mapping JSON -> header row 1:1
+        var headerRow = rows.First();
+        var map = BuildTemplateMap(tab, headerRow, workbookPart);
 
-        // Iterate rows starting at StartRow (1-based)
+        var rowDataList = new List<Dictionary<string, object>>();
         var startRow = Math.Max(tab.StartRow, tab.HasHeader ? 2 : 1);
+
         foreach (var row in rows.Where(r => r.RowIndex!.Value >= startRow))
         {
-            var meta = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            var rowDict = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
-            // Pre-seed all target keys so missing cells become empty string
-            foreach (var m in templateMap) meta[m.TargetKey] = string.Empty;
+            // Seed all keys with empty string to match your current behavior
+            foreach (var m in map) rowDict[m.TargetKey] = string.Empty;
 
             foreach (var cell in row.Elements<Cell>())
             {
-                var (colIdx, colRef) = GetColumnIndexAndRef(cell.CellReference!.Value);
-                // Prefer letter match, then header-name match
-                var map = templateMap.FirstOrDefault(m =>
-                    string.Equals(m.SourceRef, colRef, StringComparison.OrdinalIgnoreCase) ||
-                    (m.HeaderName != null && m.HeaderName.Equals(GetHeader(colIdx, headerRow, wbPart), StringComparison.OrdinalIgnoreCase)));
+                var columnIndex = GetColumnIndexFromCellReference(cell.CellReference!);
+                var colRef = GetColumnRef(cell.CellReference!);
 
-                if (map is null) continue;
+                // Try to match by letter, then by header text
+                var m = map.FirstOrDefault(x =>
+                    string.Equals(x.SourceRef, colRef, StringComparison.OrdinalIgnoreCase) ||
+                    (x.HeaderName is not null &&
+                     string.Equals(x.HeaderName, GetHeader(columnIndex, headerRow, workbookPart), StringComparison.OrdinalIgnoreCase)));
 
-                var raw = GetCellValue(cell, wbPart)?.Trim();
-                meta[map.TargetKey] = CastToType(raw, map.DataType);
+                if (m is null) continue;
+
+                var value = GetCellValue(cell, workbookPart);
+                rowDict[m.TargetKey] = value ?? string.Empty;
             }
 
-            var item = new WorkflowItem
-            {
-                WorkflowInstanceId = workflowInstanceId,
-                ItemType = sheet.Name!,
-                Metadata = JsonSerializer.Serialize(meta),
-                TemplateTabId = tab.Id,
-                RowNumber = (int)row.RowIndex!.Value,
-                ItemKey = ComputeItemKey(meta, tab.UniqueKeyExpr)
-            };
-
-            items.Add(item);
+            rowDataList.Add(rowDict);
         }
+
+        result[sheetName] = rowDataList;
     }
 
-    // TODO: persist with EF (AddRange + SaveChanges or BulkInsert)
-    // await _db.WorkflowItems.AddRangeAsync(items); await _db.SaveChangesAsync();
-
-    return items;
+    return result;
 }
 
-/* ---------- helpers ---------- */
-
+/* ----------------- helpers ----------------- */
 private sealed class MapRow
 {
-    public string SourceRef { get; init; } = "";     // "A", "B", …
-    public string TargetKey { get; init; } = "";     // metadata key
-    public string DataType { get; init; } = "string";
-    public string? HeaderName { get; init; }         // if mapping by header text
+    public string SourceRef { get; init; } = "";   // "A", "B", ...
+    public string TargetKey { get; init; } = "";   // metadata key
+    public string? HeaderName { get; init; }       // when mapping by header text
 }
 
 private List<MapRow> BuildTemplateMap(WorkflowTemplateTab tab, Row headerRow, WorkbookPart wb)
 {
     var list = new List<MapRow>();
 
-    // 1) normalized field maps take priority
-    if (tab.FieldMaps?.Any() == true)
+    // 1) Normalized field maps
+    if (tab.FieldMaps is not null && tab.FieldMaps.Any())
     {
         foreach (var f in tab.FieldMaps)
         {
             list.Add(new MapRow
             {
-                SourceRef = f.ColumnRef,   // "A" or header text depending on your convention
+                SourceRef = f.ColumnRef,
                 TargetKey = f.TargetKey,
-                DataType = f.DataType,
                 HeaderName = IsColumnLetter(f.ColumnRef) ? null : f.ColumnRef
             });
         }
         return list;
     }
 
-    // 2) fallback: JSON Mapping like { "A":"OrderId", "B":"Amount" } or { "Order Id":"OrderId" }
+    // 2) JSON mapping like { "A":"OrderId", "Customer":"CustomerId" }
     if (!string.IsNullOrWhiteSpace(tab.Mapping))
     {
         var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(tab.Mapping!)!;
@@ -132,28 +114,23 @@ private List<MapRow> BuildTemplateMap(WorkflowTemplateTab tab, Row headerRow, Wo
             {
                 SourceRef = kv.Key,
                 TargetKey = kv.Value,
-                DataType = "string",
                 HeaderName = IsColumnLetter(kv.Key) ? null : kv.Key
             });
         }
         return list;
     }
 
-    // 3) no mapping defined: map headers 1:1
-    //    header text -> same key
-    var headers = headerRow.Elements<Cell>().ToList();
-    foreach (var cell in headers)
+    // 3) Fallback: infer from header row (header text -> same key)
+    foreach (var cell in headerRow.Elements<Cell>())
     {
-        var (_, colRef) = GetColumnIndexAndRef(cell.CellReference!.Value);
-        var name = GetCellValue(cell, wb);
-        if (string.IsNullOrWhiteSpace(name)) continue;
+        var name = GetCellValue(cell, wb)?.Trim();
+        if (string.IsNullOrEmpty(name)) continue;
 
         list.Add(new MapRow
         {
-            SourceRef = colRef,
-            TargetKey = name.Trim(),
-            DataType = "string",
-            HeaderName = name.Trim()
+            SourceRef = GetColumnRef(cell.CellReference!),
+            TargetKey = name,
+            HeaderName = name
         });
     }
 
@@ -162,33 +139,22 @@ private List<MapRow> BuildTemplateMap(WorkflowTemplateTab tab, Row headerRow, Wo
 
 private static bool IsColumnLetter(string s) => s.All(char.IsLetter);
 
-private static (int idx, string colRef) GetColumnIndexAndRef(string cellRef)
+private static int GetColumnIndexFromCellReference(StringValue cellRef)
 {
-    // e.g. "B12" -> (2, "B")
-    var letters = new string(cellRef.TakeWhile(char.IsLetter).ToArray());
+    var letters = new string(cellRef.Value!.TakeWhile(char.IsLetter).ToArray());
     int index = 0;
-    foreach (char c in letters) { index = index * 26 + (c - 'A' + 1); }
-    return (index, letters);
+    foreach (char c in letters) index = index * 26 + (c - 'A' + 1);
+    return index;
 }
+
+private static string GetColumnRef(StringValue cellRef)
+    => new string(cellRef.Value!.TakeWhile(char.IsLetter).ToArray());
 
 private static string? GetHeader(int colIndex, Row headerRow, WorkbookPart wb)
 {
     var cell = headerRow.Elements<Cell>()
-        .FirstOrDefault(c => GetColumnIndexAndRef(c.CellReference!.Value).idx == colIndex);
+        .FirstOrDefault(c => GetColumnIndexFromCellReference(c.CellReference!) == colIndex);
     return cell is null ? null : GetCellValue(cell, wb)?.Trim();
-}
-
-private static object? CastToType(string? raw, string type)
-{
-    if (string.IsNullOrEmpty(raw)) return string.Empty;
-    return type.ToLowerInvariant() switch
-    {
-        "int" or "integer" => int.TryParse(raw, out var i) ? i : (int?)null,
-        "decimal" or "number" or "double" => decimal.TryParse(raw, out var d) ? d : (decimal?)null,
-        "date" or "datetime" => DateTime.TryParse(raw, out var dt) ? dt : (DateTime?)null,
-        "bool" or "boolean" => raw.Equals("true", StringComparison.OrdinalIgnoreCase) || raw == "1",
-        _ => raw
-    };
 }
 
 private static string? GetCellValue(Cell cell, WorkbookPart wbPart)
@@ -197,30 +163,4 @@ private static string? GetCellValue(Cell cell, WorkbookPart wbPart)
     if (cell.DataType?.Value == CellValues.SharedString)
     {
         var sst = wbPart.SharedStringTablePart!.SharedStringTable;
-        return sst.ElementAt(int.Parse(value)).InnerText;
-    }
-    return value;
-}
-
-private static string? ComputeItemKey(Dictionary<string, object?> meta, string? expr)
-{
-    if (string.IsNullOrWhiteSpace(expr)) return null;
-    // very small interpreter: supports 'COL:FieldName' and '+' concatenation with literals
-    // Example: "COL:OrderId + '-' + COL:Line"
-    var parts = expr.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    var sb = new System.Text.StringBuilder();
-    foreach (var p in parts)
-    {
-        if (p.StartsWith("COL:", StringComparison.OrdinalIgnoreCase))
-        {
-            var key = p.Substring(4);
-            meta.TryGetValue(key, out var val);
-            sb.Append(val?.ToString() ?? "");
-        }
-        else
-        {
-            sb.Append(p.Trim('\'', '"'));
-        }
-    }
-    return sb.ToString();
-}
+        return sst.ElementAt(int.Parse(value
