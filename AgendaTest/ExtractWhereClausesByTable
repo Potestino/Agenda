@@ -1,48 +1,89 @@
--- Main template
-CREATE TABLE WorkflowTemplates (
-  Id            INT AUTO_INCREMENT PRIMARY KEY,
-  Name          VARCHAR(150) NOT NULL,
-  Description   VARCHAR(500),
-  Config        JSON,                          -- general settings
-  CreatedBy     VARCHAR(255) NOT NULL,
-  CreatedDate   DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UpdatedBy     VARCHAR(255),
-  UpdatedDate   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+-- ============================================
+-- Insert a new Workflow Template (MySQL)
+-- ============================================
+START TRANSACTION;
+
+-- 1) Template
+INSERT INTO WorkflowTemplates (Name, Description, Config, CreatedBy)
+VALUES (
+  'Orders & Restatements v1',
+  'Imports Orders and Restatements from Excel workbook; one item per row.',
+  JSON_OBJECT('dateFormat','yyyy-MM-dd','trimStrings', true),
+  'system'
 );
+SET @TemplateId = LAST_INSERT_ID();
 
--- Tabs (sheets) this template expects
-CREATE TABLE WorkflowTemplateTabs (
-  Id            INT AUTO_INCREMENT PRIMARY KEY,
-  TemplateId    INT NOT NULL,
-  TabName       VARCHAR(100) NOT NULL,         -- Excel sheet name to look for
-  HasHeader     TINYINT(1) DEFAULT 1,
-  StartRow      INT DEFAULT 2,                 -- data start row
-  UniqueKeyExpr VARCHAR(255),                  -- e.g. "COL:A + '-' + COL:B"
-  Mapping       JSON,                          -- column -> metadata key map or transforms
-  Constraints   JSON,                          -- validations per column
-  FOREIGN KEY (TemplateId) REFERENCES WorkflowTemplates(Id)
+-- 2) Tab: Orders  (expects header row; data from row 2)
+INSERT INTO WorkflowTemplateTabs
+(TemplateId, TabName, HasHeader, StartRow, UniqueKeyExpr, Mapping, Constraints)
+VALUES
+(
+  @TemplateId,
+  'Orders',
+  1,
+  2,
+  'COL:OrderId',                                           -- your importer computes ItemKey from this
+  JSON_OBJECT(                                             -- column/header -> metadata key
+    'A','OrderId',
+    'B','CustomerId',
+    'C','OrderDate',
+    'D','Amount',
+    'E','Currency'
+  ),
+  JSON_OBJECT(                                             -- simple validations
+    'OrderId',   JSON_OBJECT('required', true),
+    'OrderDate', JSON_OBJECT('type','date'),
+    'Amount',    JSON_OBJECT('type','decimal','min',0)
+  )
 );
+SET @OrdersTabId = LAST_INSERT_ID();
 
--- Optional: field-level mapping if you prefer normalized over JSON
-CREATE TABLE WorkflowTemplateFieldMaps (
-  Id              INT AUTO_INCREMENT PRIMARY KEY,
-  TemplateTabId   INT NOT NULL,
-  ColumnRef       VARCHAR(50) NOT NULL,        -- e.g. "A", "B", or column header text
-  TargetKey       VARCHAR(100) NOT NULL,       -- metadata key name
-  DataType        VARCHAR(30)  NOT NULL,       -- string, int, decimal, date, bool
-  IsRequired      TINYINT(1) DEFAULT 0,
-  TransformExpr   VARCHAR(500),                -- optional simple expression
-  FOREIGN KEY (TemplateTabId) REFERENCES WorkflowTemplateTabs(Id)
+-- Optional normalized field maps for Orders (useful if you prefer structured mapping)
+INSERT INTO WorkflowTemplateFieldMaps (TemplateTabId, ColumnRef, TargetKey, DataType, IsRequired, TransformExpr)
+VALUES
+(@OrdersTabId, 'A', 'OrderId',    'string',  1, NULL),
+(@OrdersTabId, 'B', 'CustomerId', 'string',  1, NULL),
+(@OrdersTabId, 'C', 'OrderDate',  'date',    1, NULL),
+(@OrdersTabId, 'D', 'Amount',     'decimal', 1, NULL),
+(@OrdersTabId, 'E', 'Currency',   'string',  0, 'UPPER()');
+
+-- 3) Tab: Restatements (also header row; data from row 2)
+INSERT INTO WorkflowTemplateTabs
+(TemplateId, TabName, HasHeader, StartRow, UniqueKeyExpr, Mapping, Constraints)
+VALUES
+(
+  @TemplateId,
+  'Restatements',
+  1,
+  2,
+  'COL:OrderId + "-" + COL:Line',                          -- composite key example
+  JSON_OBJECT(
+    'A','OrderId',
+    'B','Line',
+    'C','Reason',
+    'D','NewAmount'
+  ),
+  JSON_OBJECT(
+    'OrderId',   JSON_OBJECT('required', true),
+    'Line',      JSON_OBJECT('type','int','min',1),
+    'NewAmount', JSON_OBJECT('type','decimal')
+  )
 );
+SET @RestTabId = LAST_INSERT_ID();
 
--- Link a Workflow to a Template (optional but useful)
-ALTER TABLE Workflows
-  ADD COLUMN TemplateId INT NULL,
-  ADD CONSTRAINT fk_Workflows_Templates FOREIGN KEY (TemplateId) REFERENCES WorkflowTemplates(Id);
+INSERT INTO WorkflowTemplateFieldMaps (TemplateTabId, ColumnRef, TargetKey, DataType, IsRequired, TransformExpr)
+VALUES
+(@RestTabId, 'A', 'OrderId',   'string',  1, NULL),
+(@RestTabId, 'B', 'Line',      'int',     1, NULL),
+(@RestTabId, 'C', 'Reason',    'string',  0, 'TRIM()'),
+(@RestTabId, 'D', 'NewAmount', 'decimal', 1, NULL);
 
--- Enrich items to track origin
-ALTER TABLE WorkflowItems
-  ADD COLUMN TemplateTabId INT NULL,
-  ADD COLUMN RowNumber INT NULL,
-  ADD COLUMN ItemKey VARCHAR(255) NULL,        -- derived from UniqueKeyExpr
-  ADD CONSTRAINT fk_WorkflowItems_TemplateTab FOREIGN KEY (TemplateTabId) REFERENCES WorkflowTemplateTabs(Id);
+-- 4) (Optional) link an existing Workflow to this template
+-- UPDATE Workflows SET TemplateId = @TemplateId WHERE Id = 123;
+
+COMMIT;
+
+-- Output ids (optional if you’re running in a client that prints variables)
+SELECT @TemplateId   AS TemplateId,
+       @OrdersTabId  AS OrdersTabId,
+       @RestTabId    AS RestatementsTabId;
