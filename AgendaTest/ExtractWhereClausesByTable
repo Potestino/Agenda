@@ -1,89 +1,226 @@
--- ============================================
--- Insert a new Workflow Template (MySQL)
--- ============================================
-START TRANSACTION;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
+using System.Text.Json;
 
--- 1) Template
-INSERT INTO WorkflowTemplates (Name, Description, Config, CreatedBy)
-VALUES (
-  'Orders & Restatements v1',
-  'Imports Orders and Restatements from Excel workbook; one item per row.',
-  JSON_OBJECT('dateFormat','yyyy-MM-dd','trimStrings', true),
-  'system'
-);
-SET @TemplateId = LAST_INSERT_ID();
+// Models (trimmed)
+public record WorkflowTemplate(int Id, string Name, IEnumerable<WorkflowTemplateTab> Tabs);
+public record WorkflowTemplateTab(
+    int Id, int TemplateId, string TabName, bool HasHeader, int StartRow,
+    string? UniqueKeyExpr, string? Mapping, string? Constraints,
+    IEnumerable<WorkflowTemplateFieldMap> FieldMaps);
+public record WorkflowTemplateFieldMap(int Id, int TemplateTabId, string ColumnRef, string TargetKey, string DataType, bool IsRequired, string? TransformExpr);
 
--- 2) Tab: Orders  (expects header row; data from row 2)
-INSERT INTO WorkflowTemplateTabs
-(TemplateId, TabName, HasHeader, StartRow, UniqueKeyExpr, Mapping, Constraints)
-VALUES
-(
-  @TemplateId,
-  'Orders',
-  1,
-  2,
-  'COL:OrderId',                                           -- your importer computes ItemKey from this
-  JSON_OBJECT(                                             -- column/header -> metadata key
-    'A','OrderId',
-    'B','CustomerId',
-    'C','OrderDate',
-    'D','Amount',
-    'E','Currency'
-  ),
-  JSON_OBJECT(                                             -- simple validations
-    'OrderId',   JSON_OBJECT('required', true),
-    'OrderDate', JSON_OBJECT('type','date'),
-    'Amount',    JSON_OBJECT('type','decimal','min',0)
-  )
-);
-SET @OrdersTabId = LAST_INSERT_ID();
+public class WorkflowItem
+{
+    public int WorkflowInstanceId { get; set; }
+    public string ItemType { get; set; } = string.Empty;      // sheet name
+    public string Metadata { get; set; } = string.Empty;       // JSON
+    public int? TemplateTabId { get; set; }
+    public int? RowNumber { get; set; }
+    public string? ItemKey { get; set; }
+}
 
--- Optional normalized field maps for Orders (useful if you prefer structured mapping)
-INSERT INTO WorkflowTemplateFieldMaps (TemplateTabId, ColumnRef, TargetKey, DataType, IsRequired, TransformExpr)
-VALUES
-(@OrdersTabId, 'A', 'OrderId',    'string',  1, NULL),
-(@OrdersTabId, 'B', 'CustomerId', 'string',  1, NULL),
-(@OrdersTabId, 'C', 'OrderDate',  'date',    1, NULL),
-(@OrdersTabId, 'D', 'Amount',     'decimal', 1, NULL),
-(@OrdersTabId, 'E', 'Currency',   'string',  0, 'UPPER()');
+public async Task<List<WorkflowItem>> ImportExcelWithTemplateAsync(
+    Stream fileStream,
+    int workflowInstanceId,
+    WorkflowTemplate template,
+    string createdBy)
+{
+    var items = new List<WorkflowItem>();
 
--- 3) Tab: Restatements (also header row; data from row 2)
-INSERT INTO WorkflowTemplateTabs
-(TemplateId, TabName, HasHeader, StartRow, UniqueKeyExpr, Mapping, Constraints)
-VALUES
-(
-  @TemplateId,
-  'Restatements',
-  1,
-  2,
-  'COL:OrderId + "-" + COL:Line',                          -- composite key example
-  JSON_OBJECT(
-    'A','OrderId',
-    'B','Line',
-    'C','Reason',
-    'D','NewAmount'
-  ),
-  JSON_OBJECT(
-    'OrderId',   JSON_OBJECT('required', true),
-    'Line',      JSON_OBJECT('type','int','min',1),
-    'NewAmount', JSON_OBJECT('type','decimal')
-  )
-);
-SET @RestTabId = LAST_INSERT_ID();
+    using var doc = SpreadsheetDocument.Open(fileStream, false);
+    var wbPart = doc.WorkbookPart!;
+    var sheets = wbPart.Workbook.Sheets!.Elements<Sheet>().ToList();
 
-INSERT INTO WorkflowTemplateFieldMaps (TemplateTabId, ColumnRef, TargetKey, DataType, IsRequired, TransformExpr)
-VALUES
-(@RestTabId, 'A', 'OrderId',   'string',  1, NULL),
-(@RestTabId, 'B', 'Line',      'int',     1, NULL),
-(@RestTabId, 'C', 'Reason',    'string',  0, 'TRIM()'),
-(@RestTabId, 'D', 'NewAmount', 'decimal', 1, NULL);
+    foreach (var tab in template.Tabs)
+    {
+        // find a sheet that matches the template tab name (case-insensitive)
+        var sheet = sheets.FirstOrDefault(s =>
+            string.Equals(s.Name?.Value, tab.TabName, StringComparison.OrdinalIgnoreCase));
+        if (sheet is null) continue; // sheet missing—skip or log
 
--- 4) (Optional) link an existing Workflow to this template
--- UPDATE Workflows SET TemplateId = @TemplateId WHERE Id = 123;
+        var wsPart = (WorksheetPart)wbPart.GetPartById(sheet.Id!);
+        var sheetData = wsPart.Worksheet.GetFirstChild<SheetData>()!;
+        var rows = sheetData.Elements<Row>().ToList();
+        if (rows.Count == 0) continue;
 
-COMMIT;
+        // Build column->target mapping
+        var headerRowIndex = tab.HasHeader ? 1 : 0;
+        var headerRow = rows[0];
+        var templateMap = BuildTemplateMap(tab, headerRow, wbPart);
 
--- Output ids (optional if you’re running in a client that prints variables)
-SELECT @TemplateId   AS TemplateId,
-       @OrdersTabId  AS OrdersTabId,
-       @RestTabId    AS RestatementsTabId;
+        // Iterate rows starting at StartRow (1-based)
+        var startRow = Math.Max(tab.StartRow, tab.HasHeader ? 2 : 1);
+        foreach (var row in rows.Where(r => r.RowIndex!.Value >= startRow))
+        {
+            var meta = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+            // Pre-seed all target keys so missing cells become empty string
+            foreach (var m in templateMap) meta[m.TargetKey] = string.Empty;
+
+            foreach (var cell in row.Elements<Cell>())
+            {
+                var (colIdx, colRef) = GetColumnIndexAndRef(cell.CellReference!.Value);
+                // Prefer letter match, then header-name match
+                var map = templateMap.FirstOrDefault(m =>
+                    string.Equals(m.SourceRef, colRef, StringComparison.OrdinalIgnoreCase) ||
+                    (m.HeaderName != null && m.HeaderName.Equals(GetHeader(colIdx, headerRow, wbPart), StringComparison.OrdinalIgnoreCase)));
+
+                if (map is null) continue;
+
+                var raw = GetCellValue(cell, wbPart)?.Trim();
+                meta[map.TargetKey] = CastToType(raw, map.DataType);
+            }
+
+            var item = new WorkflowItem
+            {
+                WorkflowInstanceId = workflowInstanceId,
+                ItemType = sheet.Name!,
+                Metadata = JsonSerializer.Serialize(meta),
+                TemplateTabId = tab.Id,
+                RowNumber = (int)row.RowIndex!.Value,
+                ItemKey = ComputeItemKey(meta, tab.UniqueKeyExpr)
+            };
+
+            items.Add(item);
+        }
+    }
+
+    // TODO: persist with EF (AddRange + SaveChanges or BulkInsert)
+    // await _db.WorkflowItems.AddRangeAsync(items); await _db.SaveChangesAsync();
+
+    return items;
+}
+
+/* ---------- helpers ---------- */
+
+private sealed class MapRow
+{
+    public string SourceRef { get; init; } = "";     // "A", "B", …
+    public string TargetKey { get; init; } = "";     // metadata key
+    public string DataType { get; init; } = "string";
+    public string? HeaderName { get; init; }         // if mapping by header text
+}
+
+private List<MapRow> BuildTemplateMap(WorkflowTemplateTab tab, Row headerRow, WorkbookPart wb)
+{
+    var list = new List<MapRow>();
+
+    // 1) normalized field maps take priority
+    if (tab.FieldMaps?.Any() == true)
+    {
+        foreach (var f in tab.FieldMaps)
+        {
+            list.Add(new MapRow
+            {
+                SourceRef = f.ColumnRef,   // "A" or header text depending on your convention
+                TargetKey = f.TargetKey,
+                DataType = f.DataType,
+                HeaderName = IsColumnLetter(f.ColumnRef) ? null : f.ColumnRef
+            });
+        }
+        return list;
+    }
+
+    // 2) fallback: JSON Mapping like { "A":"OrderId", "B":"Amount" } or { "Order Id":"OrderId" }
+    if (!string.IsNullOrWhiteSpace(tab.Mapping))
+    {
+        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(tab.Mapping!)!;
+        foreach (var kv in dict)
+        {
+            list.Add(new MapRow
+            {
+                SourceRef = kv.Key,
+                TargetKey = kv.Value,
+                DataType = "string",
+                HeaderName = IsColumnLetter(kv.Key) ? null : kv.Key
+            });
+        }
+        return list;
+    }
+
+    // 3) no mapping defined: map headers 1:1
+    //    header text -> same key
+    var headers = headerRow.Elements<Cell>().ToList();
+    foreach (var cell in headers)
+    {
+        var (_, colRef) = GetColumnIndexAndRef(cell.CellReference!.Value);
+        var name = GetCellValue(cell, wb);
+        if (string.IsNullOrWhiteSpace(name)) continue;
+
+        list.Add(new MapRow
+        {
+            SourceRef = colRef,
+            TargetKey = name.Trim(),
+            DataType = "string",
+            HeaderName = name.Trim()
+        });
+    }
+
+    return list;
+}
+
+private static bool IsColumnLetter(string s) => s.All(char.IsLetter);
+
+private static (int idx, string colRef) GetColumnIndexAndRef(string cellRef)
+{
+    // e.g. "B12" -> (2, "B")
+    var letters = new string(cellRef.TakeWhile(char.IsLetter).ToArray());
+    int index = 0;
+    foreach (char c in letters) { index = index * 26 + (c - 'A' + 1); }
+    return (index, letters);
+}
+
+private static string? GetHeader(int colIndex, Row headerRow, WorkbookPart wb)
+{
+    var cell = headerRow.Elements<Cell>()
+        .FirstOrDefault(c => GetColumnIndexAndRef(c.CellReference!.Value).idx == colIndex);
+    return cell is null ? null : GetCellValue(cell, wb)?.Trim();
+}
+
+private static object? CastToType(string? raw, string type)
+{
+    if (string.IsNullOrEmpty(raw)) return string.Empty;
+    return type.ToLowerInvariant() switch
+    {
+        "int" or "integer" => int.TryParse(raw, out var i) ? i : (int?)null,
+        "decimal" or "number" or "double" => decimal.TryParse(raw, out var d) ? d : (decimal?)null,
+        "date" or "datetime" => DateTime.TryParse(raw, out var dt) ? dt : (DateTime?)null,
+        "bool" or "boolean" => raw.Equals("true", StringComparison.OrdinalIgnoreCase) || raw == "1",
+        _ => raw
+    };
+}
+
+private static string? GetCellValue(Cell cell, WorkbookPart wbPart)
+{
+    var value = cell.InnerText;
+    if (cell.DataType?.Value == CellValues.SharedString)
+    {
+        var sst = wbPart.SharedStringTablePart!.SharedStringTable;
+        return sst.ElementAt(int.Parse(value)).InnerText;
+    }
+    return value;
+}
+
+private static string? ComputeItemKey(Dictionary<string, object?> meta, string? expr)
+{
+    if (string.IsNullOrWhiteSpace(expr)) return null;
+    // very small interpreter: supports 'COL:FieldName' and '+' concatenation with literals
+    // Example: "COL:OrderId + '-' + COL:Line"
+    var parts = expr.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    var sb = new System.Text.StringBuilder();
+    foreach (var p in parts)
+    {
+        if (p.StartsWith("COL:", StringComparison.OrdinalIgnoreCase))
+        {
+            var key = p.Substring(4);
+            meta.TryGetValue(key, out var val);
+            sb.Append(val?.ToString() ?? "");
+        }
+        else
+        {
+            sb.Append(p.Trim('\'', '"'));
+        }
+    }
+    return sb.ToString();
+}
