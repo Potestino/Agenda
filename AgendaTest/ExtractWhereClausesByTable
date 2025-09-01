@@ -1,166 +1,41 @@
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Spreadsheet;
-using System.Text.Json;
+def withDBCredentials(Closure body) {
+    withCredentials([
+        usernamePassword(credentialsId: 'jenkins-rde-mysql-user', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASS'),
+        string(credentialsId: 'jenkins-rde-mysql-host', variable: 'DB_HOST')
+    ]) {
+        body(DB_HOST, DB_USER, DB_PASS)
+    }
+}
 
-public record WorkflowTemplate(int Id, IEnumerable<WorkflowTemplateTab> Tabs);
-public record WorkflowTemplateTab(
-    int Id, string TabName, bool HasHeader, int StartRow,
-    string? Mapping, IEnumerable<WorkflowTemplateFieldMap>? FieldMaps);
-public record WorkflowTemplateFieldMap(string ColumnRef, string TargetKey, string DataType = "string");
 
-/// <summary>
-/// Reads only the sheets defined in the template and returns:
-/// Dictionary{ sheetName => List{ Dictionary{ columnKey => value } } }
-/// </summary>
-public Dictionary<string, List<Dictionary<string, object>>> ReadExcelWithTemplate(
-    Stream fileStream, WorkflowTemplate template)
-{
-    var result = new Dictionary<string, List<Dictionary<string, object>>>(StringComparer.OrdinalIgnoreCase);
-
-    using var document = SpreadsheetDocument.Open(fileStream, false);
-    var workbookPart = document.WorkbookPart!;
-    var sheets = workbookPart.Workbook.Sheets!.Elements<Sheet>().ToList();
-
-    // Build a lookup of template tabs by name
-    var tabsByName = template.Tabs
-        .GroupBy(t => t.TabName, StringComparer.OrdinalIgnoreCase)
-        .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-
-    foreach (var sheet in sheets)
-    {
-        var sheetName = sheet.Name!.Value!;
-        if (!tabsByName.TryGetValue(sheetName, out var tab)) continue; // skip sheets not in template
-
-        var worksheetPart = (WorksheetPart)workbookPart.GetPartById(sheet.Id!);
-        var sheetData = worksheetPart.Worksheet.Elements<SheetData>().First();
-        var rows = sheetData.Elements<Row>().ToList();
-        if (rows.Count == 0) continue;
-
-        // Build mapping for this sheet (column -> key)
-        // Priority: FieldMaps -> Mapping JSON -> header row 1:1
-        var headerRow = rows.First();
-        var map = BuildTemplateMap(tab, headerRow, workbookPart);
-
-        var rowDataList = new List<Dictionary<string, object>>();
-        var startRow = Math.Max(tab.StartRow, tab.HasHeader ? 2 : 1);
-
-        foreach (var row in rows.Where(r => r.RowIndex!.Value >= startRow))
-        {
-            var rowDict = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-
-            // Seed all keys with empty string to match your current behavior
-            foreach (var m in map) rowDict[m.TargetKey] = string.Empty;
-
-            foreach (var cell in row.Elements<Cell>())
-            {
-                var columnIndex = GetColumnIndexFromCellReference(cell.CellReference!);
-                var colRef = GetColumnRef(cell.CellReference!);
-
-                // Try to match by letter, then by header text
-                var m = map.FirstOrDefault(x =>
-                    string.Equals(x.SourceRef, colRef, StringComparison.OrdinalIgnoreCase) ||
-                    (x.HeaderName is not null &&
-                     string.Equals(x.HeaderName, GetHeader(columnIndex, headerRow, workbookPart), StringComparison.OrdinalIgnoreCase)));
-
-                if (m is null) continue;
-
-                var value = GetCellValue(cell, workbookPart);
-                rowDict[m.TargetKey] = value ?? string.Empty;
+stage("Deployment MySQL Test Script") {
+    when { expression { params.PIPELINE_ACTION == 'deployment with SQL' || params.PIPELINE_ACTION == 'SQL only' } }
+    steps {
+        script {
+            withDBCredentials { host, user, pass ->
+                if (env.ENV_CHOICE == 'production') {
+                    executeMySQLScript(host, user, pass, "rde2_dev1", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
+                    executeMySQLScript(host, user, pass, "rde2_dev2", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
+                } else {
+                    executeMySQLScript(host, user, pass, "rde2_${env.ENV_CHOICE}", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
+                }
             }
-
-            rowDataList.Add(rowDict);
         }
-
-        result[sheetName] = rowDataList;
     }
-
-    return result;
-}
-
-/* ----------------- helpers ----------------- */
-private sealed class MapRow
-{
-    public string SourceRef { get; init; } = "";   // "A", "B", ...
-    public string TargetKey { get; init; } = "";   // metadata key
-    public string? HeaderName { get; init; }       // when mapping by header text
-}
-
-private List<MapRow> BuildTemplateMap(WorkflowTemplateTab tab, Row headerRow, WorkbookPart wb)
-{
-    var list = new List<MapRow>();
-
-    // 1) Normalized field maps
-    if (tab.FieldMaps is not null && tab.FieldMaps.Any())
-    {
-        foreach (var f in tab.FieldMaps)
-        {
-            list.Add(new MapRow
-            {
-                SourceRef = f.ColumnRef,
-                TargetKey = f.TargetKey,
-                HeaderName = IsColumnLetter(f.ColumnRef) ? null : f.ColumnRef
-            });
+    post {
+        success {
+            script {
+                withDBCredentials { host, user, pass ->
+                    executeMySQLScript(host, user, pass, "rde2_${env.ENV_CHOICE}", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
+                }
+            }
         }
-        return list;
-    }
-
-    // 2) JSON mapping like { "A":"OrderId", "Customer":"CustomerId" }
-    if (!string.IsNullOrWhiteSpace(tab.Mapping))
-    {
-        var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(tab.Mapping!)!;
-        foreach (var kv in dict)
-        {
-            list.Add(new MapRow
-            {
-                SourceRef = kv.Key,
-                TargetKey = kv.Value,
-                HeaderName = IsColumnLetter(kv.Key) ? null : kv.Key
-            });
+        failure {
+            script {
+                withDBCredentials { host, user, pass ->
+                    executeMySQLScript(host, user, pass, "rde2_${env.ENV_CHOICE}", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
+                }
+            }
         }
-        return list;
     }
-
-    // 3) Fallback: infer from header row (header text -> same key)
-    foreach (var cell in headerRow.Elements<Cell>())
-    {
-        var name = GetCellValue(cell, wb)?.Trim();
-        if (string.IsNullOrEmpty(name)) continue;
-
-        list.Add(new MapRow
-        {
-            SourceRef = GetColumnRef(cell.CellReference!),
-            TargetKey = name,
-            HeaderName = name
-        });
-    }
-
-    return list;
 }
-
-private static bool IsColumnLetter(string s) => s.All(char.IsLetter);
-
-private static int GetColumnIndexFromCellReference(StringValue cellRef)
-{
-    var letters = new string(cellRef.Value!.TakeWhile(char.IsLetter).ToArray());
-    int index = 0;
-    foreach (char c in letters) index = index * 26 + (c - 'A' + 1);
-    return index;
-}
-
-private static string GetColumnRef(StringValue cellRef)
-    => new string(cellRef.Value!.TakeWhile(char.IsLetter).ToArray());
-
-private static string? GetHeader(int colIndex, Row headerRow, WorkbookPart wb)
-{
-    var cell = headerRow.Elements<Cell>()
-        .FirstOrDefault(c => GetColumnIndexFromCellReference(c.CellReference!) == colIndex);
-    return cell is null ? null : GetCellValue(cell, wb)?.Trim();
-}
-
-private static string? GetCellValue(Cell cell, WorkbookPart wbPart)
-{
-    var value = cell.InnerText;
-    if (cell.DataType?.Value == CellValues.SharedString)
-    {
-        var sst = wbPart.SharedStringTablePart!.SharedStringTable;
-        return sst.ElementAt(int.Parse(value
