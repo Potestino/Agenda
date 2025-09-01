@@ -1,41 +1,7 @@
-def withDBCredentials(Closure body) {
-    withCredentials([
-        usernamePassword(credentialsId: 'jenkins-rde-mysql-user', usernameVariable: 'DB_USER', passwordVariable: 'DB_PASS'),
-        string(credentialsId: 'jenkins-rde-mysql-host', variable: 'DB_HOST')
-    ]) {
-        body(DB_HOST, DB_USER, DB_PASS)
-    }
-}
-
-
-stage("Deployment MySQL Test Script") {
-    when { expression { params.PIPELINE_ACTION == 'deployment with SQL' || params.PIPELINE_ACTION == 'SQL only' } }
-    steps {
-        script {
-            withDBCredentials { host, user, pass ->
-                if (env.ENV_CHOICE == 'production') {
-                    executeMySQLScript(host, user, pass, "rde2_dev1", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
-                    executeMySQLScript(host, user, pass, "rde2_dev2", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
-                } else {
-                    executeMySQLScript(host, user, pass, "rde2_${env.ENV_CHOICE}", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
-                }
-            }
-        }
-    }
-    post {
-        success {
-            script {
-                withDBCredentials { host, user, pass ->
-                    executeMySQLScript(host, user, pass, "rde2_${env.ENV_CHOICE}", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
-                }
-            }
-        }
-        failure {
-            script {
-                withDBCredentials { host, user, pass ->
-                    executeMySQLScript(host, user, pass, "rde2_${env.ENV_CHOICE}", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
-                }
-            }
-        }
-    }
+withCredentials([
+    string(credentialsId: 'jenkins-rde-mysql-user', variable: 'DB_USER'),
+    string(credentialsId: 'jenkins-rde-mysql-pass', variable: 'DB_PASS'),
+    string(credentialsId: 'jenkins-rde-mysql-host', variable: 'DB_HOST')
+]) {
+    body(DB_HOST, DB_USER, DB_PASS)
 }
