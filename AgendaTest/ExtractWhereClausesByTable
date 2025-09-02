@@ -1,7 +1,38 @@
-withCredentials([
-    string(credentialsId: 'jenkins-rde-mysql-user', variable: 'DB_USER'),
-    string(credentialsId: 'jenkins-rde-mysql-pass', variable: 'DB_PASS'),
-    string(credentialsId: 'jenkins-rde-mysql-host', variable: 'DB_HOST')
-]) {
-    body(DB_HOST, DB_USER, DB_PASS)
-}
+-- Make sure MySQL understands this script uses procedures
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS deploy_changes $$
+CREATE PROCEDURE deploy_changes()
+BEGIN
+    -- Error handler: rollback if any statement fails
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT '❌ Error occurred. All changes have been rolled back.' AS status;
+    END;
+
+    START TRANSACTION;
+
+    -- ==================================================
+    -- Your SQL deployment changes go below
+    -- ==================================================
+
+    -- Example (replace with your real statements)
+    UPDATE MarketSettings 
+    SET setting_name = 'UpdatedValue' 
+    WHERE id = 1;
+
+    INSERT INTO MarketSettings (id, setting_name) 
+    VALUES (999, 'TestInsert');
+
+    -- ==================================================
+    -- If everything succeeds, commit
+    -- ==================================================
+    COMMIT;
+    SELECT '✅ Deployment changes committed successfully.' AS status;
+END $$
+
+DELIMITER ;
+
+-- Run the procedure
+CALL deploy_changes();
