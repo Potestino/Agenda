@@ -1,4 +1,19 @@
--- Make sure MySQL understands this script uses procedures
+-- ============================================
+-- 🚧 DDL Changes Section (Schema Updates)
+-- ============================================
+-- ⚠️ IMPORTANT: DDL changes (CREATE/ALTER/DROP) auto-commit in MySQL.
+-- They cannot be rolled back with transactions. 
+-- For each DDL statement, provide a matching rollback statement manually.
+
+-- Example DDL changes (irreversible, must script rollback separately):
+-- ALTER TABLE MarketSettings ADD COLUMN new_col VARCHAR(50);
+-- CREATE TABLE Audit_Log (id INT PRIMARY KEY, message VARCHAR(255));
+
+
+
+-- ============================================
+-- ✅ DML Changes Section (Data Updates, Transaction-Safe)
+-- ============================================
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS deploy_changes $$
@@ -8,28 +23,20 @@ BEGIN
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
-        SELECT '❌ Error occurred. All changes have been rolled back.' AS status;
+        SELECT '❌ Error occurred. All data changes rolled back.' AS status;
     END;
 
     START TRANSACTION;
 
-    -- ==================================================
-    -- Your SQL deployment changes go below
-    -- ==================================================
+    -- ========================================
+    -- Place DML changes here (safe, rollback works)
+    -- ========================================
+    -- Example statements:
+    -- UPDATE MarketSettings SET setting_name = 'UpdatedValue' WHERE id = 1;
+    -- INSERT INTO MarketSettings (id, setting_name) VALUES (999, 'TestInsert');
 
-    -- Example (replace with your real statements)
-    UPDATE MarketSettings 
-    SET setting_name = 'UpdatedValue' 
-    WHERE id = 1;
-
-    INSERT INTO MarketSettings (id, setting_name) 
-    VALUES (999, 'TestInsert');
-
-    -- ==================================================
-    -- If everything succeeds, commit
-    -- ==================================================
     COMMIT;
-    SELECT '✅ Deployment changes committed successfully.' AS status;
+    SELECT '✅ Data changes committed successfully.' AS status;
 END $$
 
 DELIMITER ;
