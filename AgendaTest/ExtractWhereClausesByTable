@@ -1,45 +1,30 @@
--- ============================================
--- 🚧 DDL Changes Section (Schema Updates)
--- ============================================
--- ⚠️ IMPORTANT: DDL changes (CREATE/ALTER/DROP) auto-commit in MySQL.
--- They cannot be rolled back with transactions. 
--- For each DDL statement, provide a matching rollback statement manually.
+def executeMySQLScript(host, user, pass, db_name, script_path) {
+    def result = sh(
+        script: """
+            mysql -h "${host}" -P 3308 -u "${user}" -p"${pass}" \
+                -N -B -e "source ${script_path}" ${db_name}
+        """,
+        returnStdout: true
+    ).trim()
 
--- Example DDL changes (irreversible, must script rollback separately):
--- ALTER TABLE MarketSettings ADD COLUMN new_col VARCHAR(50);
--- CREATE TABLE Audit_Log (id INT PRIMARY KEY, message VARCHAR(255));
+    echo "MySQL returned: ${result}"
+
+    return result
+}
 
 
-
--- ============================================
--- ✅ DML Changes Section (Data Updates, Transaction-Safe)
--- ============================================
-DELIMITER $$
-
-DROP PROCEDURE IF EXISTS deploy_changes $$
-CREATE PROCEDURE deploy_changes()
-BEGIN
-    -- Error handler: rollback if any statement fails
-    DECLARE EXIT HANDLER FOR SQLEXCEPTION
-    BEGIN
-        ROLLBACK;
-        SELECT '❌ Error occurred. All data changes rolled back.' AS status;
-    END;
-
-    START TRANSACTION;
-
-    -- ========================================
-    -- Place DML changes here (safe, rollback works)
-    -- ========================================
-    -- Example statements:
-    -- UPDATE MarketSettings SET setting_name = 'UpdatedValue' WHERE id = 1;
-    -- INSERT INTO MarketSettings (id, setting_name) VALUES (999, 'TestInsert');
-
-    COMMIT;
-    SELECT '✅ Data changes committed successfully.' AS status;
-END $$
-
-DELIMITER ;
-
--- Run the procedure
-CALL deploy_changes();
+stage("Run SQL") {
+    steps {
+        script {
+            withDBCredentials { host, user, pass ->
+                def statusMsg = executeMySQLScript(host, user, pass, "rde2_${env.ENV_CHOICE}", "RDE2.SQL/Scripts/Deploy/${params.SQLSCRIPTNAME}")
+                
+                if (statusMsg.contains("❌")) {
+                    error("Pipeline failed due to SQL error: ${statusMsg}")
+                } else {
+                    echo "✅ Success: ${statusMsg}"
+                }
+            }
+        }
+    }
+}
