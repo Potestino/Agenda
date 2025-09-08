@@ -3,21 +3,23 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Spinner Calibrator v4 — Paste Center SVG Logo</title>
+<title>Spinner Calibrator v5 — Independent Logo Center</title>
 <style>
 :root{
   --bg:#0b0b0c; --panel:#15171a; --muted:#9aa3b2;
   --purple:#6a1b9a; --blue:#3f66b6; --pink:#e23a8a; --e-blue:#0d4c8f;
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);color:#eaeaea;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-.layout{display:grid;grid-template-columns:minmax(520px,1fr) 520px;gap:16px;height:100%;padding:14px}
+html,body{height:100%;margin:0;background:var(--bg);color:#eaeaea;
+  font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+.layout{display:grid;grid-template-columns:minmax(520px,1fr) 540px;gap:16px;height:100%;padding:14px}
 .stage{position:relative;display:grid;place-items:center;min-height:520px;background:#0f1013;border:1px solid #24262b;border-radius:14px;overflow:hidden}
 #board{position:relative;width:520px;height:520px;background:#0f1013;border-radius:12px}
 #bg{position:absolute;inset:0;object-fit:contain;opacity:.35;pointer-events:none}
-/* Overlay SVG to preview pasted logo in the centre */
-#overlay{position:absolute; inset:0; width:520px; height:520px; pointer-events:none}
-.center{position:absolute;width:12px;height:12px;background:#fff;border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);box-shadow:0 0 12px rgba(255,255,255,.7);cursor:grab}
+/* Overlay SVG: pointer-events only on the handle */
+#overlay{position:absolute; inset:0; width:520px; height:520px}
+.center{position:absolute;width:12px;height:12px;background:#fff;border-radius:50%;left:50%;top:50%;
+  transform:translate(-50%,-50%);box-shadow:0 0 12px rgba(255,255,255,.7);cursor:grab}
 .center:active,.sq:active{cursor:grabbing}
 .sq{position:absolute;border-radius:12px;cursor:grab;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 #purpleLeft{background:var(--purple);width:64px;height:64px;border-radius:14px}
@@ -31,10 +33,13 @@ html,body{height:100%;margin:0;background:var(--bg);color:#eaeaea;font-family:ui
 label{font-size:12px;color:var(--muted)}
 .btn{background:#2b2f36;border:1px solid #3a3f48;border-radius:10px;color:#eaeaea;padding:10px 12px;font-weight:600;cursor:pointer}
 .btn:hover{background:#343945}
-.code{background:#0f1013;border:1px solid #24262b;border-radius:10px;padding:10px;white-space:pre-wrap;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px;max-height:26vh;overflow:auto}
+.code{background:#0f1013;border:1px solid #24262b;border-radius:10px;padding:10px;white-space:pre-wrap;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px;max-height:28vh;overflow:auto}
 input[type="range"]{width:180px}
-textarea{width:100%;min-height:120px;background:#0f1013;color:#eaeaea;border:1px solid #24262b;border-radius:10px;padding:10px;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px}
+textarea{width:100%;min-height:110px;background:#0f1013;color:#eaeaea;border:1px solid #24262b;border-radius:10px;padding:10px;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px}
 small{color:var(--muted)}
+/* Logo handle */
+#logoHandle{cursor:grab; fill:rgba(13,76,143,.08); stroke:#7fb0db; stroke-width:1.2}
+#logoHandle:active{cursor:grabbing}
 </style>
 </head>
 <body>
@@ -42,9 +47,17 @@ small{color:var(--muted)}
   <div class="stage">
     <div id="board">
       <img id="bg" alt="frame"/>
-      <!-- Overlay SVG for center-logo preview -->
+      <!-- Overlay SVG for the center logo (draggable handle) -->
       <svg id="overlay" viewBox="0 0 520 520">
-        <g id="logoG" transform="translate(260 260) scale(1) translate(0 0)"></g>
+        <g id="logoRoot">
+          <!-- handle drawn at logo base center -->
+          <circle id="logoHandle" cx="260" cy="260" r="14"></circle>
+          <g id="logoG" transform="translate(260 260) rotate(0) translate(0 0) scale(1)">
+            <text x="0" y="28" text-anchor="middle" font-size="72" font-weight="700"
+                  fill="#0d4c8f" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">e</text>
+            <circle cx="40" cy="35" r="3" fill="#a7bfd6"/>
+          </g>
+        </g>
       </svg>
 
       <div id="center" class="center" title="Drag to set orbit center"></div>
@@ -66,6 +79,13 @@ small{color:var(--muted)}
     </div>
 
     <div class="row">
+      <label><input type="checkbox" id="lockLogo" checked> Lock logo to white dot</label>
+      <button class="btn" id="snapDotToLogo">Snap dot → logo</button>
+      <button class="btn" id="snapLogoToDot">Snap logo → dot</button>
+      <small>(When unlocked, drag the blue ring to move the logo without moving the dot.)</small>
+    </div>
+
+    <div class="row">
       <label>Ellipse Y (egg)</label>
       <input type="range" id="egg" min="0.7" max="1.6" step="0.01" value="1.00"><span id="eggVal">1.00</span>
       <label>Lap1</label><input id="lap1" type="number" value="2.4" step="0.1" style="width:70px">
@@ -77,6 +97,8 @@ small{color:var(--muted)}
     <div class="row">
       <label>Min scale</label><input id="smin" type="number" value="0.35" step="0.05" style="width:70px">
       <label>Max scale</label><input id="smax" type="number" value="1.00" step="0.05" style="width:70px">
+      <label>Logo scale</label><input id="logoScale" type="number" value="1.0" step="0.05" style="width:80px">
+      <label>Logo rot</label><input id="logoRot" type="number" value="0" step="1" style="width:80px">
     </div>
 
     <div class="row" style="align-items:flex-start">
@@ -85,16 +107,9 @@ small{color:var(--muted)}
         <textarea id="logoMarkup"><text x="0" y="28" text-anchor="middle" font-size="72" font-weight="700" fill="#0d4c8f" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">e</text><circle cx="40" cy="35" r="3" fill="#a7bfd6"/></textarea>
       </div>
     </div>
-    <div class="row">
-      <label>Logo scale</label><input id="logoScale" type="number" value="1.0" step="0.05" style="width:80px">
-      <label>Logo offset X</label><input id="logoDX" type="number" value="0" step="1" style="width:80px">
-      <label>Logo offset Y</label><input id="logoDY" type="number" value="0" step="1" style="width:80px">
-      <label>Logo rotation</label><input id="logoRot" type="number" value="0" step="1" style="width:80px">
-    </div>
 
     <div class="row"><strong>Positions</strong></div>
     <pre id="pos" class="code"></pre>
-
     <div class="row"><strong>Exported HTML</strong></div>
     <pre id="out" class="code"></pre>
   </div>
@@ -109,8 +124,11 @@ const lap1=document.getElementById('lap1'),lap2=document.getElementById('lap2'),
 const egg=document.getElementById('egg'), eggVal=document.getElementById('eggVal');
 const smin=document.getElementById('smin'), smax=document.getElementById('smax');
 const logoMarkup=document.getElementById('logoMarkup');
-const logoScale=document.getElementById('logoScale'), logoDX=document.getElementById('logoDX'), logoDY=document.getElementById('logoDY'), logoRot=document.getElementById('logoRot');
-const logoG=document.getElementById('logoG');
+const logoScale=document.getElementById('logoScale'), logoRot=document.getElementById('logoRot');
+const lockLogo=document.getElementById('lockLogo');
+const logoG=document.getElementById('logoG'), logoHandle=document.getElementById('logoHandle');
+
+let logoX=260, logoY=260; // independent logo position (SVG units)
 
 function setPos(el,x,y){ el.style.left=(x-el.offsetWidth/2)+'px'; el.style.top=(y-el.offsetHeight/2)+'px'; el.dataset.x=x; el.dataset.y=y; readout(); updateLogo(); }
 function getPos(el){ return {x:+(el.dataset.x||0), y:+(el.dataset.y||0)} }
@@ -122,8 +140,9 @@ function reset(){
   setPos(document.getElementById('purpleLeft'),cx-120,cy);
   setPos(document.getElementById('pinkBL'),cx-75,cy+55);
   setPos(document.getElementById('pinkBottom'),cx+10,cy+125);
+  logoX = cx; logoY = cy;
   egg.value=1.0; eggVal.textContent=egg.value;
-  logoScale.value=1.0; logoDX.value=0; logoDY.value=0; logoRot.value=0;
+  logoScale.value=1.0; logoRot.value=0;
   updateLogo();
 }
 reset();
@@ -131,33 +150,58 @@ reset();
 function drag(el){
   let d=false,ox=0,oy=0;
   el.addEventListener('pointerdown',e=>{d=true;el.setPointerCapture(e.pointerId);const r=el.getBoundingClientRect();ox=e.clientX-r.left;oy=e.clientY-r.top;});
-  el.addEventListener('pointermove',e=>{if(!d)return;const b=board.getBoundingClientRect();let x=e.clientX-b.left-ox+el.offsetWidth/2,y=e.clientY-b.top-oy+el.offsetHeight/2;x=Math.max(0,Math.min(W,x));y=Math.max(0,Math.min(H,y));setPos(el,x,y);});
+  el.addEventListener('pointermove',e=>{
+    if(!d)return;
+    const b=board.getBoundingClientRect();
+    let x=e.clientX-b.left-ox+el.offsetWidth/2,y=e.clientY-b.top-oy+el.offsetHeight/2;
+    x=Math.max(0,Math.min(W,x)); y=Math.max(0,Math.min(H,y));
+    setPos(el,x,y);
+    if(lockLogo.checked){ logoX=x; logoY=y; updateLogo(); }
+  });
   el.addEventListener('pointerup',()=>d=false);
 }
 drag(center); squares.forEach(drag);
 
+// Drag the logo handle (moves logo independently)
+(function(){
+  let d=false;
+  logoHandle.addEventListener('pointerdown', e=>{ d=true; logoHandle.setPointerCapture(e.pointerId); });
+  logoHandle.addEventListener('pointermove', e=>{
+    if(!d) return;
+    const b=board.getBoundingClientRect();
+    const x = Math.max(0, Math.min(W, e.clientX - b.left));
+    const y = Math.max(0, Math.min(H, e.clientY - b.top));
+    logoX = x; logoY = y; updateLogo();
+  });
+  logoHandle.addEventListener('pointerup', ()=> d=false);
+})();
+
+document.getElementById('snapDotToLogo').onclick = ()=>{ setPos(center, logoX, logoY); };
+document.getElementById('snapLogoToDot').onclick = ()=>{ const c=getPos(center); logoX=c.x; logoY=c.y; updateLogo(); };
+
 document.getElementById('file').addEventListener('change',e=>{const f=e.target.files[0];if(!f) return; document.getElementById('bg').src=URL.createObjectURL(f);});
 document.getElementById('reset').onclick=reset; egg.oninput=()=>eggVal.textContent=egg.value;
-[logoMarkup, logoScale, logoDX, logoDY, logoRot].forEach(el=>el.addEventListener('input', updateLogo));
+[logoMarkup, logoScale, logoRot].forEach(el=>el.addEventListener('input', updateLogo));
 
 function readout(){
   const c=getPos(center), data={center:c, squares:{}}; for(const s of squares){ data.squares[s.id]=getPos(s); } posEl.textContent=JSON.stringify(data,null,2);
 }
-readout();
 
 function updateLogo(){
-  const c=getPos(center);
-  logoG.setAttribute('transform', `translate(${c.x} ${c.y}) rotate(${+logoRot.value}) translate(${+logoDX.value} ${+logoDY.value}) scale(${+logoScale.value})`);
-  // set content
+  // Update handle
+  logoHandle.setAttribute('cx', logoX); logoHandle.setAttribute('cy', logoY);
+  // Apply transform to logo group
+  logoG.setAttribute('transform', `translate(${logoX} ${logoY}) rotate(${+logoRot.value}) scale(${+logoScale.value})`);
   logoG.innerHTML = logoMarkup.value;
 }
+updateLogo(); readout();
 
 function map(p){ const s=200/Math.max(W,H); return {x:p.x*s,y:p.y*s} }
 
 function exportSVG(){
   const c=getPos(center), C=map(c);
   const cfg={lap1:+lap1.value,lap2:+lap2.value,hold:+hold.value, vanish:+vanish.value, egg:+egg.value, smin:+smin.value, smax:+smax.value};
-  const logoCfg={scale:+logoScale.value, dx:+logoDX.value, dy:+logoDY.value, rot:+logoRot.value, markup:logoMarkup.value};
+  const logo={x:logoX, y:logoY, scale:+logoScale.value, rot:+logoRot.value, markup:logoMarkup.value};
 
   const specs=[
     ["blueTop","#3f66b6",48,12],
@@ -171,13 +215,13 @@ function exportSVG(){
   const posData = JSON.parse(posEl.textContent);
   for(const [id,color,size,rx] of specs){
     const P=map(posData.squares[id]);
+    // Center of orbit is the white dot (C)
     const dx=P.x-C.x, dy=(P.y-C.y);
     const r = Math.hypot(dx,dy);
     const rxE=r, ryE=r*cfg.egg;
     const pathId=`orbit_${id}`;
     const P2={x:2*C.x-P.x, y:2*C.y-P.y};
-    const phi=0;
-    defs.push(`<path id="${pathId}" d="M ${P.x},${P.y} A ${rxE},${ryE} ${phi} 1 1 ${P2.x},${P2.y} A ${rxE},${ryE} ${phi} 1 1 ${P.x},${P.y}" fill="none"/>`);
+    defs.push(`<path id="${pathId}" d="M ${P.x},${P.y} A ${rxE},${ryE} 0 1 1 ${P2.x},${P2.y} A ${rxE},${ryE} 0 1 1 ${P.x},${P.y}" fill="none"/>`);
 
     items.push(`
       <g id="${id}" opacity="0">
@@ -192,6 +236,7 @@ function exportSVG(){
     `);
   }
 
+  const s=200/520;
   const svg = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>5-Square Spinner — Export</title>
@@ -200,8 +245,8 @@ svg{width:min(420px,90vw);height:auto;display:block;filter:drop-shadow(0 10px 30
 </head><body>
 <svg viewBox="0 0 200 200" role="img" aria-label="Loading">
   <defs>${defs.join("\n")}</defs>
-  <g transform="translate(${C.x} ${C.y}) rotate(${logoCfg.rot}) translate(${logoCfg.dx*200/520} ${logoCfg.dy*200/520}) scale(${logoCfg.scale*200/520})">
-    ${logoCfg.markup}
+  <g transform="translate(${logo.x*s} ${logo.y*s}) rotate(${logo.rot}) scale(${logo.scale*s})">
+    ${logo.markup}
   </g>
   ${items.join("\n")}
 </svg>
@@ -210,7 +255,6 @@ svg{width:min(420px,90vw);height:auto;display:block;filter:drop-shadow(0 10px 30
 }
 
 document.getElementById('export').onclick = exportSVG;
-updateLogo();
 </script>
 </body>
 </html>
