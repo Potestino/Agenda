@@ -1,8 +1,11 @@
-/* ========= SERVICE GRID STYLES ONLY ========= */
+/* ============================================================
+   APPLY ONLY TO THE SERVICE CATALOGUE GRID
+   ============================================================ */
 
 .service-grid table {
-    border-collapse: collapse;
     width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
 }
 
 /* Header */
@@ -14,7 +17,7 @@
     border-bottom: 2px solid #d1d5de;
 }
 
-/* Body cells */
+/* Table cells */
 .service-grid table tbody tr td {
     padding: 12px;
     position: relative;
@@ -23,9 +26,8 @@
 
 /* Alternating stripes */
 .service-grid table tbody tr:nth-child(even) td {
-    background: rgba(255,255,255,0.75);
+    background: rgba(255,255,255,0.7);
 }
-
 .service-grid table tbody tr:nth-child(odd) td {
     background: rgba(255,255,255,0.9);
 }
@@ -34,24 +36,26 @@
 .service-grid table tbody tr td:first-child::before {
     content: "";
     position: absolute;
-    top: 0;
     left: 0;
+    top: 0;
     width: 6px;
     height: 100%;
     border-radius: 4px 0 0 4px;
 }
 
-/* ==== STATUS COLORS ==== */
+/* =============================
+   STATUS COLORS
+   ============================= */
 
-/* NORMAL (Yellow) */
+/* YELLOW — NORMAL */
 .service-grid table tbody tr.status-normal td {
-    background: linear-gradient(90deg, #fff8bc66, #fff3a766);
+    background: linear-gradient(90deg, #fff8bc66, #fff4a766);
 }
 .service-grid table tbody tr.status-normal td:first-child::before {
     background: #ffd85e;
 }
 
-/* NEW (Blue) */
+/* BLUE — NEW */
 .service-grid table tbody tr.status-new td {
     background: linear-gradient(90deg, #d8e9ff66, #c6ddff66);
 }
@@ -59,15 +63,6 @@
     background: #75b9ff;
 }
 
-/* UPDATED (Green) */
+/* GREEN — UPDATED */
 .service-grid table tbody tr.status-updated td {
-    background: linear-gradient(90deg, #d7f7db66, #b6efc366);
-}
-.service-grid table tbody tr.status-updated td:first-child::before {
-    background: #4edb7a;
-}
-
-/* Hover highlight */
-.service-grid table tbody tr:hover td {
-    background: rgba(255,255,255,1) !important;
-}
+    bac
