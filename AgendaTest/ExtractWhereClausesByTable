@@ -65,4 +65,13 @@
 
 /* GREEN — UPDATED */
 .service-grid table tbody tr.status-updated td {
-    bac
+    background: linear-gradient(90deg, #d7f7db66, #b6efc366);
+}
+.service-grid table tbody tr.status-updated td:first-child::before {
+    background: #4edb7a;
+}
+
+/* Hover highlight */
+.service-grid table tbody tr:hover td {
+    background: rgba(255,255,255,1) !important;
+}
