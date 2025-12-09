@@ -1,308 +1,73 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Spinner Calibrator v9 — Brand preset positions & colors</title>
-<style>
-:root{ --bg:#0b0b0c; --panel:#15171a; --muted:#9aa3b2; }
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);color:#eaeaea;
-  font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-.layout{display:grid;grid-template-columns:minmax(520px,1fr) 640px;gap:16px;height:100%;padding:14px}
-.stage{position:relative;display:grid;place-items:center;min-height:520px;background:#0f1013;border:1px solid #24262b;border-radius:14px;overflow:hidden}
-#board{position:relative;width:520px;height:520px;background:#0f1013;border-radius:12px}
-#bg{position:absolute;inset:0;object-fit:contain;opacity:.35;pointer-events:none}
-#overlay{position:absolute; inset:0; width:520px; height:520px}
-.center{position:absolute;width:12px;height:12px;background:#fff;border-radius:50%;left:50%;top:50%;
-  transform:translate(-50%,-50%);box-shadow:0 0 12px rgba(255,255,255,.7);cursor:grab}
-.center:active,.sq:active{cursor:grabbing}
-.sq{position:absolute;border-radius:12px;cursor:grab;box-shadow:0 4px 14px rgba(0,0,0,.35)}
-.panel{background:var(--panel);border:1px solid #24262b;border-radius:14px;padding:14px;display:grid;gap:12px;align-content:start}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-label{font-size:12px;color:var(--muted)}
-.btn{background:#2b2f36;border:1px solid #3a3f48;border-radius:10px;color:#eaeaea;padding:10px 12px;font-weight:600;cursor:pointer}
-.btn:hover{background:#343945}
-.code{background:#0f1013;border:1px solid #24262b;border-radius:10px;padding:10px;white-space:pre-wrap;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px;max-height:28vh;overflow:auto}
-input[type="range"]{width:160px}
-textarea{width:100%;min-height:110px;background:#0f1013;color:#eaeaea;border:1px solid #24262b;border-radius:10px;padding:10px;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12px}
-small{color:var(--muted)}
-#logoHandle{cursor:grab; fill:rgba(13,76,143,.08); stroke:#7fb0db; stroke-width:1.2}
-#logoHandle:active{cursor:grabbing}
-.grid{display:grid;grid-template-columns:170px 1fr 1fr;gap:8px;align-items:center}
-.grid h4{grid-column:1/-1;margin:12px 0 4px 0;font-size:12px;color:#cfd5df;letter-spacing:.02em;text-transform:uppercase}
-.grid .muted{font-size:12px;color:var(--muted)}
-</style>
-</head>
-<body>
-<div class="layout">
-  <div class="stage">
-    <div id="board">
-      <img id="bg" alt="frame"/>
-      <svg id="overlay" viewBox="0 0 520 520">
-        <g id="logoRoot">
-          <circle id="logoHandle" cx="260" cy="260" r="14"></circle>
-          <g id="logoG" transform="translate(260 260) rotate(0) scale(1)">
-            <text x="0" y="28" text-anchor="middle" font-size="72" font-weight="700"
-                  fill="#0d4c8f" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">e</text>
-            <circle cx="40" cy="35" r="3" fill="#a7bfd6"/>
-          </g>
-        </g>
-      </svg>
+/* ========= SERVICE GRID STYLES ONLY ========= */
 
-      <div id="center" class="center" title="Drag to set orbit center"></div>
-      <div id="blueTop" class="sq" title="blueTop"></div>
-      <div id="pinkTR" class="sq" title="pinkTR"></div>
-      <div id="purpleLeft" class="sq" title="purpleLeft"></div>
-      <div id="pinkBL" class="sq" title="pinkBL"></div>
-      <div id="pinkBottom" class="sq" title="pinkBottom"></div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="row">
-      <label>Reference frame (optional):</label>
-      <input id="file" type="file" accept="image/*">
-      <span style="flex:1"></span>
-      <button class="btn" id="preset">Apply Brand Preset</button>
-      <button class="btn" id="reset">Reset</button>
-      <button class="btn" id="export">Export Pure SVG Spinner</button>
-    </div>
-
-    <div class="row">
-      <label><input type="checkbox" id="lockLogo"> Lock logo to white dot</label>
-      <button class="btn" id="snapDotToLogo">Snap dot → logo</button>
-      <button class="btn" id="snapLogoToDot">Snap logo → dot</button>
-      <small>(Unlock to move the logo independently using the blue circle.)</small>
-    </div>
-
-    <div class="row">
-      <label>Ellipse Y (egg)</label>
-      <input type="range" id="egg" min="0.7" max="1.6" step="0.01" value="1.15"><span id="eggVal">1.15</span>
-      <label>Lap1</label><input id="lap1" type="number" value="2.4" step="0.1" style="width:70px">
-      <label>Lap2</label><input id="lap2" type="number" value="0.8" step="0.1" style="width:70px">
-      <label>Hold</label><input id="hold" type="number" value="0.35" step="0.05" style="width:70px">
-      <label>Vanish@ (0..1)</label><input id="vanish" type="number" value="0.78" step="0.02" style="width:70px">
-      <label>Min scale</label><input id="smin" type="number" value="0.35" step="0.05" style="width:70px">
-      <label>Max scale</label><input id="smax" type="number" value="1.00" step="0.05" style="width:70px">
-      <label>Logo scale</label><input id="logoScale" type="number" value="1.0" step="0.05" style="width:80px">
-      <label>Logo rot</label><input id="logoRot" type="number" value="0" step="1" style="width:80px">
-    </div>
-
-    <div class="row">
-      <label>Fade-in (s)</label><input id="fadeIn" type="number" value="0.35" step="0.05" style="width:80px">
-      <small>Opacity ramps 0→1 at Lap 1 start.</small>
-    </div>
-
-    <div class="row" style="align-items:flex-start">
-      <div style="flex:1">
-        <label>Center logo SVG markup (paste your `<g>...</g>` or `<path .../>` here)</label>
-        <textarea id="logoMarkup"><text x="0" y="28" text-anchor="middle" font-size="72" font-weight="700" fill="#0d4c8f" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">e</text><circle cx="40" cy="35" r="3" fill="#a7bfd6"/></textarea>
-      </div>
-    </div>
-
-    <div class="grid" id="controlGrid">
-      <h4>Colors</h4>
-      <span class="muted">Top (blue)</span> <input type="color" id="c-blueTop" value="#2f77c8"> <div id="cval-blueTop"></div>
-      <span class="muted">Top-right (pink)</span> <input type="color" id="c-pinkTR" value="#e63b8c"> <div id="cval-pinkTR"></div>
-      <span class="muted">Left (purple)</span> <input type="color" id="c-purpleLeft" value="#6e2ca3"> <div id="cval-purpleLeft"></div>
-      <span class="muted">Bottom-left (pink)</span> <input type="color" id="c-pinkBL" value="#e63b8c"> <div id="cval-pinkBL"></div>
-      <span class="muted">Bottom (pink)</span> <input type="color" id="c-pinkBottom" value="#e63b8c"> <div id="cval-pinkBottom"></div>
-
-      <h4>Sizes (px) & Roundness</h4>
-      <span class="muted">Top (blue)</span> <input type="number" id="size-blueTop" value="108" step="1"> <input type="number" id="rad-blueTop" value="22" step="1">
-      <span class="muted">Top-right (pink)</span> <input type="number" id="size-pinkTR" value="56" step="1"> <input type="number" id="rad-pinkTR" value="12" step="1">
-      <span class="muted">Left (purple)</span> <input type="number" id="size-purpleLeft" value="132" step="1"> <input type="number" id="rad-purpleLeft" value="28" step="1">
-      <span class="muted">Bottom-left (pink)</span> <input type="number" id="size-pinkBL" value="88" step="1"> <input type="number" id="rad-pinkBL" value="18" step="1">
-      <span class="muted">Bottom (pink)</span> <input type="number" id="size-pinkBottom" value="96" step="1"> <input type="number" id="rad-pinkBottom" value="20" step="1">
-    </div>
-
-    <div class="row"><strong>Positions</strong></div>
-    <pre id="pos" class="code"></pre>
-    <div class="row"><strong>Exported HTML</strong></div>
-    <pre id="out" class="code"></pre>
-  </div>
-</div>
-
-<script>
-const W=520,H=520, board=document.getElementById('board');
-const center=document.getElementById('center');
-const squares=[...document.querySelectorAll('.sq')];
-const posEl=document.getElementById('pos'), outEl=document.getElementById('out');
-const lap1=document.getElementById('lap1'),lap2=document.getElementById('lap2'),hold=document.getElementById('hold'),vanish=document.getElementById('vanish');
-const egg=document.getElementById('egg'), eggVal=document.getElementById('eggVal');
-const smin=document.getElementById('smin'), smax=document.getElementById('smax');
-const logoMarkup=document.getElementById('logoMarkup');
-const logoScale=document.getElementById('logoScale'), logoRot=document.getElementById('logoRot');
-const lockLogo=document.getElementById('lockLogo');
-const logoG=document.getElementById('logoG'), logoHandle=document.getElementById('logoHandle');
-const fadeIn=document.getElementById('fadeIn');
-
-let logoX=260, logoY=260;
-
-const colors = { blueTop:'#2f77c8', pinkTR:'#e63b8c', purpleLeft:'#6e2ca3', pinkBL:'#e63b8c', pinkBottom:'#e63b8c' };
-const sizes  = { blueTop:108, pinkTR:56, purpleLeft:132, pinkBL:88, pinkBottom:96 };
-const radii  = { blueTop:22,  pinkTR:12, purpleLeft:28, pinkBL:18, pinkBottom:20 };
-
-function setPos(el,x,y){ el.style.left=(x-el.offsetWidth/2)+'px'; el.style.top=(y-el.offsetHeight/2)+'px'; el.dataset.x=x; el.dataset.y=y; readout(); }
-function getPos(el){ return {x:+(el.dataset.x||0), y:+(el.dataset.y||0)} }
-
-function applyColors(){
-  for(const id in colors){
-    const el = document.getElementById(id);
-    if(el) el.style.background = colors[id];
-    const v = document.getElementById('cval-'+id);
-    if(v) v.textContent = colors[id];
-    const pick = document.getElementById('c-'+id);
-    if(pick) pick.value = colors[id];
-  }
-}
-function applySizes(){
-  for(const id in sizes){
-    const el = document.getElementById(id);
-    if(!el) continue;
-    const x = +el.dataset.x || el.offsetLeft+el.offsetWidth/2;
-    const y = +el.dataset.y || el.offsetTop+el.offsetHeight/2;
-    el.style.width = sizes[id]+'px';
-    el.style.height = sizes[id]+'px';
-    el.style.borderRadius = radii[id]+'px';
-    document.getElementById('size-'+id).value = sizes[id];
-    document.getElementById('rad-'+id).value = radii[id];
-    setPos(el, x, y);
-  }
+.service-grid table {
+    border-collapse: collapse;
+    width: 100%;
 }
 
-['blueTop','pinkTR','purpleLeft','pinkBL','pinkBottom'].forEach(id=>{
-  document.getElementById('c-'+id).addEventListener('input', e=>{ colors[id]=e.target.value; applyColors(); });
-  document.getElementById('size-'+id).addEventListener('input', e=>{ sizes[id]=Math.max(6,+e.target.value||0); applySizes(); });
-  document.getElementById('rad-'+id).addEventListener('input', e=>{ radii[id]=Math.max(0,+e.target.value||0); applySizes(); });
-});
-
-function brandPreset(){
-  setPos(center,260,260);
-  setPos(document.getElementById('purpleLeft'),120,230);
-  setPos(document.getElementById('blueTop'),290,100);
-  setPos(document.getElementById('pinkTR'),385,160);
-  setPos(document.getElementById('pinkBL'),195,330);
-  setPos(document.getElementById('pinkBottom'),260,420);
-
-  logoX=260; logoY=260; updateLogo();
-  egg.value=1.15; document.getElementById('eggVal').textContent=egg.value;
-  applyColors(); applySizes(); readout();
+/* Header */
+.service-grid table thead tr th {
+    background: #e7eaf0;
+    padding: 12px;
+    text-align: left;
+    font-weight: bold;
+    border-bottom: 2px solid #d1d5de;
 }
 
-function reset(){ brandPreset(); }
-document.getElementById('preset').onclick=brandPreset;
-document.getElementById('reset').onclick=reset;
-
-brandPreset(); // load on start
-
-function drag(el){
-  let d=false,ox=0,oy=0;
-  el.addEventListener('pointerdown',e=>{d=true;el.setPointerCapture(e.pointerId);const r=el.getBoundingClientRect();ox=e.clientX-r.left;oy=e.clientY-r.top;});
-  el.addEventListener('pointermove',e=>{
-    if(!d)return;
-    const b=board.getBoundingClientRect();
-    let x=e.clientX-b.left-ox+el.offsetWidth/2,y=e.clientY-b.top-oy+el.offsetHeight/2;
-    x=Math.max(0,Math.min(W,x)); y=Math.max(0,Math.min(H,y));
-    setPos(el,x,y);
-    if(lockLogo.checked && el.id==='center'){ logoX=x; logoY=y; updateLogo(); }
-  });
-  el.addEventListener('pointerup',()=>d=false);
-}
-drag(center); squares.forEach(drag);
-
-(function(){
-  let d=false;
-  logoHandle.addEventListener('pointerdown', e=>{ d=true; logoHandle.setPointerCapture(e.pointerId); });
-  logoHandle.addEventListener('pointermove', e=>{
-    if(!d) return;
-    const b=board.getBoundingClientRect();
-    logoX = Math.max(0, Math.min(W, e.clientX - b.left));
-    logoY = Math.max(0, Math.min(H, e.clientY - b.top));
-    updateLogo();
-  });
-  logoHandle.addEventListener('pointerup', ()=> d=false);
-})();
-
-document.getElementById('snapDotToLogo').onclick = ()=>{ setPos(center, logoX, logoY); };
-document.getElementById('snapLogoToDot').onclick = ()=>{ const c=getPos(center); logoX=c.x; logoY=c.y; updateLogo(); };
-
-document.getElementById('file').addEventListener('change',e=>{const f=e.target.files[0];if(!f) return; document.getElementById('bg').src=URL.createObjectURL(f);});
-egg.oninput=()=>eggVal.textContent=egg.value;
-[logoMarkup, logoScale, logoRot].forEach(el=>el.addEventListener('input', updateLogo));
-
-function readout(){
-  const c=getPos(center), data={center:c, squares:{}, size:{}, radius:{}, colors:{...colors}};
-  ['blueTop','pinkTR','purpleLeft','pinkBL','pinkBottom'].forEach(id=>{
-    data.squares[id]=getPos(document.getElementById(id));
-    data.size[id]=sizes[id]; data.radius[id]=radii[id];
-  });
-  posEl.textContent=JSON.stringify(data,null,2);
-}
-readout();
-
-function updateLogo(){
-  document.getElementById('logoHandle').setAttribute('cx', logoX);
-  document.getElementById('logoHandle').setAttribute('cy', logoY);
-  logoG.setAttribute('transform', `translate(${logoX} ${logoY}) rotate(${+logoRot.value}) scale(${+logoScale.value})`);
-  logoG.innerHTML = logoMarkup.value;
+/* Body cells */
+.service-grid table tbody tr td {
+    padding: 12px;
+    position: relative;
+    border-bottom: 1px solid #e3e6ec;
 }
 
-function map(p){ const s=200/Math.max(W,H); return {x:p.x*s,y:p.y*s} }
-
-function exportSVG(){
-  const c=getPos(center), C=map(c);
-  const cfg={lap1:+lap1.value,lap2:+lap2.value,hold:+hold.value, vanish:+vanish.value, egg:+egg.value, smin:+smin.value, smax:+smax.value, fadeIn:0.35};
-  const logo={x:logoX, y:logoY, scale:+logoScale.value, rot:+logoRot.value, markup:logoMarkup.value};
-  const data = JSON.parse(posEl.textContent);
-  const defs=[], items=[];
-
-  ['blueTop','pinkTR','purpleLeft','pinkBL','pinkBottom'].forEach(id=>{
-    const P=map(data.squares[id]);
-    const size = data.size[id], rx = data.radius[id], color = data.colors[id];
-    const dx=P.x-C.x, dy=(P.y-C.y);
-    const r = Math.hypot(dx,dy);
-    const rxE=r, ryE=r*cfg.egg;
-    const P2={x:2*C.x-P.x, y:2*C.y-P.y};
-    const pathId=`orbit_${id}`;
-    defs.push(`<path id="${pathId}" d="M ${P.x},${P.y} A ${rxE},${ryE} 0 1 1 ${P2.x},${P2.y} A ${rxE},${ryE} 0 1 1 ${P.x},${P.y}" fill="none"/>`);
-
-    const lap1Begin = `0s; ${id}-lap2.end+0.4s`;
-
-    items.push(`
-      <g id="${id}" opacity="0">
-        <g transform="translate(-${size/2},-${size/2})"><rect width="${size}" height="${size}" rx="${rx}" ry="${rx}" fill="${color}"/></g>
-        <animate id="${id}-fadein" attributeName="opacity" values="0;1" dur="${cfg.fadeIn}s" begin="${lap1Begin}" fill="freeze" keyTimes="0;1" calcMode="spline" keySplines=".2,0,.1,1"/>
-        <animateMotion id="${id}-lap1" dur="${cfg.lap1}s" begin="${lap1Begin}" rotate="0" fill="freeze"><mpath xlink:href="#${pathId}"/></animateMotion>
-        <animateMotion id="${id}-lap2" dur="${cfg.lap2}s" begin="${id}-lap1.end+${cfg.hold}s" rotate="0" keyTimes="0;1" calcMode="spline" keySplines=".4,0,1,1"><mpath xlink:href="#${pathId}"/></animateMotion>
-        <animateTransform attributeName="transform" type="scale" values="${cfg.smin};${cfg.smax}" dur="${cfg.lap1}s" begin="${lap1Begin}" fill="freeze"/>
-        <animateTransform attributeName="transform" type="scale" values="${cfg.smax};${cfg.smin}" dur="${cfg.lap2}s" begin="${id}-lap1.end" fill="freeze"/>
-        <animate id="${id}-fade" attributeName="opacity" values="1;0" dur="${Math.max(0.12, cfg.lap2*0.22)}s" begin="${id}-lap2.begin+${(0.78*1).toFixed(2)}s" fill="freeze"/>
-      </g>
-    `);
-  });
-
-  const s=200/520;
-  const svg = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>5-Square Spinner — Export</title>
-<style>html,body{height:100%;margin:0;background:#0b0b0c;display:grid;place-items:center}
-svg{width:min(420px,90vw);height:auto;display:block;filter:drop-shadow(0 10px 30px rgba(0,0,0,.55))}</style>
-</head><body>
-<svg viewBox="0 0 200 200" role="img" aria-label="Loading">
-  <defs>${defs.join("\n")}</defs>
-  <g transform="translate(${logo.x*s} ${logo.y*s}) rotate(${logo.rot}) scale(${logo.scale*s})">
-    ${logo.markup}
-  </g>
-  ${items.join("\n")}
-</svg>
-</body></html>`;
-  outEl.textContent = svg;
+/* Alternating stripes */
+.service-grid table tbody tr:nth-child(even) td {
+    background: rgba(255,255,255,0.75);
 }
 
-document.getElementById('export').onclick = exportSVG;
-document.getElementById('file').addEventListener('change',e=>{const f=e.target.files[0];if(!f) return; document.getElementById('bg').src=URL.createObjectURL(f);});
-</script>
-</body>
-</html>
+.service-grid table tbody tr:nth-child(odd) td {
+    background: rgba(255,255,255,0.9);
+}
+
+/* Left ribbon bar */
+.service-grid table tbody tr td:first-child::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    border-radius: 4px 0 0 4px;
+}
+
+/* ==== STATUS COLORS ==== */
+
+/* NORMAL (Yellow) */
+.service-grid table tbody tr.status-normal td {
+    background: linear-gradient(90deg, #fff8bc66, #fff3a766);
+}
+.service-grid table tbody tr.status-normal td:first-child::before {
+    background: #ffd85e;
+}
+
+/* NEW (Blue) */
+.service-grid table tbody tr.status-new td {
+    background: linear-gradient(90deg, #d8e9ff66, #c6ddff66);
+}
+.service-grid table tbody tr.status-new td:first-child::before {
+    background: #75b9ff;
+}
+
+/* UPDATED (Green) */
+.service-grid table tbody tr.status-updated td {
+    background: linear-gradient(90deg, #d7f7db66, #b6efc366);
+}
+.service-grid table tbody tr.status-updated td:first-child::before {
+    background: #4edb7a;
+}
+
+/* Hover highlight */
+.service-grid table tbody tr:hover td {
+    background: rgba(255,255,255,1) !important;
+}
