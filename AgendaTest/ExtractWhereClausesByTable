@@ -1,77 +1,21 @@
-/* ============================================================
-   APPLY ONLY TO THE SERVICE CATALOGUE GRID
-   ============================================================ */
-
-.service-grid table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
+.service-grid table tr:has(td div.status-new) td {
+    background: linear-gradient(90deg, #d8e9ff66, #c6ddff66) !important;
 }
 
-/* Header */
-.service-grid table thead tr th {
-    background: #e7eaf0;
-    padding: 12px;
-    text-align: left;
-    font-weight: bold;
-    border-bottom: 2px solid #d1d5de;
+.service-grid table tr:has(td div.status-new) td:first-child::before {
+    background: #75b9ff !important;
+}
+.service-grid table tr:has(td div.status-updated) td {
+    background: linear-gradient(90deg, #d7f7db66, #b6efc366) !important;
 }
 
-/* Table cells */
-.service-grid table tbody tr td {
-    padding: 12px;
-    position: relative;
-    border-bottom: 1px solid #e3e6ec;
+.service-grid table tr:has(td div.status-updated) td:first-child::before {
+    background: #4edb7a !important;
+}
+.service-grid table tr:has(td div.status-normal) td {
+    background: linear-gradient(90deg, #fff8bc66, #fff4a766) !important;
 }
 
-/* Alternating stripes */
-.service-grid table tbody tr:nth-child(even) td {
-    background: rgba(255,255,255,0.7);
-}
-.service-grid table tbody tr:nth-child(odd) td {
-    background: rgba(255,255,255,0.9);
-}
-
-/* Left ribbon bar */
-.service-grid table tbody tr td:first-child::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 6px;
-    height: 100%;
-    border-radius: 4px 0 0 4px;
-}
-
-/* =============================
-   STATUS COLORS
-   ============================= */
-
-/* YELLOW — NORMAL */
-.service-grid table tbody tr.status-normal td {
-    background: linear-gradient(90deg, #fff8bc66, #fff4a766);
-}
-.service-grid table tbody tr.status-normal td:first-child::before {
-    background: #ffd85e;
-}
-
-/* BLUE — NEW */
-.service-grid table tbody tr.status-new td {
-    background: linear-gradient(90deg, #d8e9ff66, #c6ddff66);
-}
-.service-grid table tbody tr.status-new td:first-child::before {
-    background: #75b9ff;
-}
-
-/* GREEN — UPDATED */
-.service-grid table tbody tr.status-updated td {
-    background: linear-gradient(90deg, #d7f7db66, #b6efc366);
-}
-.service-grid table tbody tr.status-updated td:first-child::before {
-    background: #4edb7a;
-}
-
-/* Hover highlight */
-.service-grid table tbody tr:hover td {
-    background: rgba(255,255,255,1) !important;
+.service-grid table tr:has(td div.status-normal) td:first-child::before {
+    background: #ffd85e !important;
 }
